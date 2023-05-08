@@ -188,7 +188,7 @@ export function clear_compose_box() {
     compose_banner.clear_errors();
     compose_banner.clear_warnings();
     compose_ui.hide_compose_spinner();
-    reset_compose_scheduling_state();
+    popover_menus.reset_selected_schedule_timestamp();
 }
 
 export function send_message_success(local_id, message_id, locally_echoed) {
@@ -249,6 +249,7 @@ export function send_message(request = create_message_object()) {
             compose_banner.show_error_message(
                 response,
                 compose_banner.CLASSNAMES.generic_compose_error,
+                $("#compose_banners"),
                 $("#compose-textarea"),
             );
             // For messages that were not locally echoed, we're
@@ -269,7 +270,6 @@ export function send_message(request = create_message_object()) {
     }
 
     transmit.send_message(request, success, error);
-    scheduled_messages.delete_scheduled_message_if_sent_directly();
     server_events.assert_get_events_running(
         "Restarting get_events because it was not running during send",
     );
@@ -298,7 +298,7 @@ export function enter_with_preview_open(ctrl_pressed = false) {
 // Common entrypoint for asking the server to send the message
 // currently drafted in the compose box, including for scheduled
 // messages.
-export function finish() {
+export function finish(from_do_schedule_message = false) {
     if (compose_ui.compose_spinner_visible) {
         // Avoid sending a message twice in parallel in races where
         // the user clicks the `Send` button very quickly twice or
@@ -330,7 +330,7 @@ export function finish() {
         return false;
     }
 
-    if (popover_menus.is_time_selected_for_schedule()) {
+    if (from_do_schedule_message) {
         schedule_message_to_custom_date();
     } else {
         send_message();
@@ -466,7 +466,7 @@ export function initialize() {
 
     upload.feature_check($("#compose .compose_upload_file"));
 
-    $("#compose_banners").on(
+    $("body").on(
         "click",
         `.${CSS.escape(compose_banner.CLASSNAMES.wildcard_warning)} .compose_banner_action_button`,
         (event) => {
@@ -480,7 +480,7 @@ export function initialize() {
     const user_not_subscribed_selector = `.${CSS.escape(
         compose_banner.CLASSNAMES.user_not_subscribed,
     )}`;
-    $("#compose_banners").on(
+    $("body").on(
         "click",
         `${user_not_subscribed_selector} .compose_banner_action_button`,
         (event) => {
@@ -496,7 +496,7 @@ export function initialize() {
         },
     );
 
-    $("#compose_banners").on(
+    $("body").on(
         "click",
         `.${CSS.escape(compose_banner.CLASSNAMES.topic_resolved)} .compose_banner_action_button`,
         (event) => {
@@ -513,7 +513,7 @@ export function initialize() {
         },
     );
 
-    $("#compose_banners").on(
+    $("body").on(
         "click",
         `.${CSS.escape(
             compose_banner.CLASSNAMES.unmute_topic_notification,
@@ -535,14 +535,16 @@ export function initialize() {
         },
     );
 
-    $("#compose_banners").on(
+    $("body").on(
         "click",
         `.${CSS.escape(
             compose_banner.CLASSNAMES.recipient_not_subscribed,
         )} .compose_banner_action_button`,
         (event) => {
             event.preventDefault();
-
+            const $edit_form = $(event.target)
+                .closest(".message_edit_form")
+                .find(".edit_form_banners");
             const $invite_row = $(event.target).parents(".compose_banner");
 
             const user_id = Number.parseInt($invite_row.data("user-id"), 10);
@@ -557,6 +559,7 @@ export function initialize() {
                 compose_banner.show_error_message(
                     error_msg,
                     compose_banner.CLASSNAMES.generic_compose_error,
+                    $edit_form.length ? $edit_form : $("#compose_banners"),
                     $("#compose-textarea"),
                 );
                 $(event.target).prop("disabled", true);
@@ -575,14 +578,10 @@ export function initialize() {
 
     for (const classname of Object.values(compose_banner.CLASSNAMES)) {
         const classname_selector = `.${CSS.escape(classname)}`;
-        $("#compose_banners").on(
-            "click",
-            `${classname_selector} .compose_banner_close_button`,
-            (event) => {
-                event.preventDefault();
-                $(event.target).parents(classname_selector).remove();
-            },
-        );
+        $("body").on("click", `${classname_selector} .compose_banner_close_button`, (event) => {
+            event.preventDefault();
+            $(event.target).parents(classname_selector).remove();
+        });
     }
 
     // Click event binding for "Attach files" button
@@ -789,22 +788,11 @@ export function initialize() {
     }
 }
 
-export function reset_compose_scheduling_state(reset_edit_state = true) {
-    $("#compose-textarea").prop("disabled", false);
-    $("#compose-schedule-confirm-button").hide();
-    popover_menus.reset_selected_schedule_time();
-    $("#compose-send-button").show();
-    if (reset_edit_state) {
-        $("#compose-textarea").removeAttr("data-scheduled-message-id");
-    }
-}
-
 function schedule_message_to_custom_date() {
     const compose_message_object = create_message_object();
 
     const deliver_at = popover_menus.get_formatted_selected_send_later_time();
-    const send_later_time = popover_menus.get_selected_send_later_time();
-    const scheduled_delivery_timestamp = Math.floor(Date.parse(send_later_time) / 1000);
+    const scheduled_delivery_timestamp = popover_menus.get_selected_send_later_timestamp();
 
     const message_type = compose_message_object.type;
     let req_type;
@@ -822,13 +810,6 @@ function schedule_message_to_custom_date() {
         content: compose_message_object.content,
         scheduled_delivery_timestamp,
     };
-
-    // If this is an edit request `scheduled_message_id` will be defined.
-    if ($("#compose-textarea").attr("data-scheduled-message-id")) {
-        scheduled_message_data.scheduled_message_id = $("#compose-textarea").attr(
-            "data-scheduled-message-id",
-        );
-    }
 
     scheduled_messages.send_request_to_schedule_message(scheduled_message_data, deliver_at);
 }
