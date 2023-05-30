@@ -52,7 +52,8 @@ as well as those mentioned in the
 [install](install.md#installer-options) documentation:
 
 - `--postgresql-version`: Sets the version of PostgreSQL that will be
-  installed. We currently support PostgreSQL 12, 13, and 14.
+  installed. We currently support PostgreSQL 12, 13, 14, and 15, with 15 being
+  the default.
 
 - `--postgresql-database-name=exampledbname`: With this option, you
   can customize the default database name. If you do not set this. The
@@ -454,6 +455,7 @@ that your Zulip server sits at `https://10.10.10.10:443`; see
 
            location / {
                    proxy_set_header        X-Forwarded-For $proxy_add_x_forwarded_for;
+                   proxy_set_header        X-Forwarded-Proto $scheme;
                    proxy_set_header        Host $http_host;
                    proxy_http_version      1.1;
                    proxy_buffering         off;
@@ -554,6 +556,8 @@ your Zulip server sits at `https://10.10.10.10:443`see
        bind *:80
        bind *:443 ssl crt /etc/ssl/private/zulip-combined.crt
        http-request redirect scheme https code 301 unless { ssl_fc }
+       http-request set-header X-Forwarded-Proto http unless { ssl_fc }
+       http-request set-header X-Forwarded-Proto https if { ssl_fc }
        default_backend zulip
 
    backend zulip
@@ -578,6 +582,13 @@ things you need to be careful about when configuring it:
    your work by looking at `/var/log/zulip/server.log` and checking it
    has the actual IP addresses of clients, not the IP address of the
    proxy server.
+
+1. Configure your reverse proxy (or proxies) to correctly maintain the
+   `X-Forwarded-Proto` HTTP header, which is supposed to contain either `https`
+   or `http` depending on the connection between your browser and your
+   proxy. This will be used by Django to perform CSRF checks regardless of your
+   connection mechanism from your proxy to Zulip. Note that the proxies _must_
+   set the header, overriding any existing values, not add a new header.
 
 1. Configure your proxy to pass along the `Host:` header as was sent
    from the client, not the internal hostname as seen by the proxy.
@@ -753,11 +764,22 @@ RabbitMQ.
 
 #### `rolling_restart`
 
-If set to a non-empty value, when using `./scripts/restart-server` to
-restart Zulip, restart the uwsgi processes one-at-a-time, instead of
-all at once. This decreases the number of 502's served to clients, at
-the cost of slightly increased memory usage, and the possibility that
+If set to true, when using `./scripts/restart-server` to restart
+Zulip, restart the uwsgi processes one-at-a-time, instead of all at
+once. This decreases the number of 502's served to clients, at the
+cost of slightly increased memory usage, and the possibility that
 different requests will be served by different versions of the code.
+
+#### `service_file_descriptor_limit`
+
+The number of file descriptors which [Supervisor is configured to allow
+processes to use][supervisor-minds]; defaults to 40000. If your Zulip deployment
+is very large (hundreds of thousands of concurrent users), your Django processes
+hit this limit and refuse connections to clients. Raising it above this default
+may require changing system-level limits, particularly if you are using a
+virtualized environment (e.g. Docker, or Proxmox LXC).
+
+[supervisor-minfds]: http://supervisord.org/configuration.html?highlight=minfds#supervisord-section-values
 
 #### `s3_memory_cache_size`
 

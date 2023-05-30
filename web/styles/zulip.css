@@ -1,11 +1,19 @@
+html {
+    overflow-y: scroll;
+    overflow-x: hidden;
+    overscroll-behavior-y: none;
+    width: calc(100% - var(--disabled-scrollbar-width));
+}
+
 body,
 html {
-    width: 100%;
     height: 100%;
-    overflow-x: hidden;
-    overflow-y: hidden;
-
     touch-action: manipulation;
+}
+
+.column-middle,
+#main_div {
+    background-color: var(--color-background);
 }
 
 #app-loading.loaded {
@@ -13,16 +21,28 @@ html {
 }
 
 body {
+    width: 100%;
     font-size: 14px;
     line-height: calc(20 / 14);
     font-family: "Source Sans 3", sans-serif;
-}
-
-/* Common background color */
-body,
-#message_view_header_underpadding {
-    background-color: hsl(0deg 0% 100%);
+    color: var(--color-text-default);
+    background-color: var(--color-background);
     transition: background-color 200ms linear;
+
+    /* Implementation for fluid layout width setting. */
+    .header-main,
+    .app .app-main,
+    #compose-container {
+        max-width: 1400px;
+    }
+
+    &.fluid_layout_width {
+        .header-main,
+        .app .app-main,
+        #compose-container {
+            max-width: inherit;
+        }
+    }
 }
 
 :root {
@@ -41,6 +61,15 @@ body,
     }
 
     /*
+    Since #navbar_alerts_wrapper can take variable height depending upon
+    window width / language, we sync its height in navbar_alerts.js
+    */
+    --navbar-alerts-wrapper-height: 0px;
+    --navbar-fixed-height: calc(
+        var(--header-height) + var(--navbar-alerts-wrapper-height)
+    );
+
+    /*
     We have a 10px gutter below the header,
     which often needs to be respected by both
     the elements above it and below it on
@@ -52,37 +81,115 @@ body,
     Our sidebars (and anything that top-align
     with them) go beneath the header.
     */
-    --sidebar-top: calc(var(--header-height) + var(--header-padding-bottom));
     --left-sidebar-collapse-widget-gutter: 10px;
     --left-sidebar-width: 270px;
     --right-sidebar-width: 250px;
 
+    /*
+    Left position of unread marker. Only needs to be tracked if it is negative so that
+    it doesn't leak through message header.
+    */
+    --unread-marker-left: -1px;
+
+    /*
+    Compose-recipient box minimum height. Used in a flexbox context to
+    allow elements like DM pills to stack without breaking out of their
+    flex item.
+    */
+    --compose-recipient-box-min-height: 30.5px;
+
+    /*
+    Width to be reserved for document scrollbar when scrolling is disabled.
+    Using `scrollbar-gutter` would be more appropriate but doesn't has wide
+    support and doesn't work for `fixed` elements.
+    */
+    --disabled-scrollbar-width: 0px;
+
+    /*
+    Right offset of simplebar scrollbar for `.column-right` when browser has
+    overlay scrollbars which don't occupy any space. Currently only
+    known to present on Mac (all browsers) and Firefox (all OS?). This seems
+    more than enough to differentiate right sidebar scrollbar and browser
+    scrollbar even if the browser scrollbar is wider.
+    */
+    --browser-overlay-scrollbar-width: 10px;
+
     /* Colors used across the app */
     --color-background-private-message-header: hsl(46deg 35% 93%);
-    --color-text-private-message-header: hsl(0deg 0% 100%);
     --color-background-private-message-content: hsl(45deg 20% 96%);
-    --color-text-message-header: hsl(0deg 0% 15%);
-    --color-message-list-border: hsl(0deg 0% 80%);
+    --color-background-stream-message-content: hsl(0deg 0% 100%);
+    --color-message-list-border: hsl(0deg 0% 0% / 16%);
+    --color-message-header-contents-border: hsl(0deg 0% 0% / 10%);
+    --color-private-message-header-border: hsl(0deg 0% 0% / 10%);
+    --color-message-header-contents-border-bottom: hsl(0deg 0% 0% / 5%);
+    --color-private-message-header-border-bottom: hsl(0deg 0% 0% / 7%);
     --color-message-header-icon-non-interactive: hsl(0deg 0% 0% / 30%);
     --color-message-header-icon-interactive: hsl(0deg 0% 0%);
-    --color-background: hsl(0deg 0% 100%);
+    --color-background: hsl(0deg 0% 94%);
+    --color-background-dropdown-input: hsl(0deg 0% 100%);
+    --color-background-navbar: hsl(0deg 0% 96%);
+    --color-background-active-narrow-filter: hsl(202deg 56% 91%);
+    --color-background-hover-narrow-filter: hsl(120deg 12.3% 71.4% / 38%);
+    --color-navbar-bottom-border: hsl(0deg 0% 80%);
+    --color-unread-marker: hsl(217deg 64% 59%);
+    --color-failed-message-send-icon: hsl(3.88deg 98.84% 66.27%);
+    --color-background-modal: hsl(0deg 0% 98%);
+
+    /* Text colors */
+    --color-text-default: hsl(0deg 0% 20%);
+    --color-text-message-view-header: hsl(0deg 0% 20% / 100%);
+    --color-text-message-header: hsl(0deg 0% 15%);
+    --color-text-dropdown-input: hsl(0deg 0% 13.33%);
+    --color-text-self-direct-mention: hsl(240deg 52% 45% / 100%);
+    --color-text-self-group-mention: hsl(183deg 52% 26% / 100%);
+
+    /* Mention pill colors */
     --color-background-direct-mention: hsl(240deg 52% 95%);
     --color-background-group-mention: hsl(180deg 40% 94%);
+    --color-background-text-direct-mention: hsl(240deg 70% 70% / 20%);
+    --color-background-text-hover-direct-mention: hsl(240deg 70% 70% / 30%);
+    --color-background-text-group-mention: hsl(183deg 60% 45% / 18%);
+    --color-background-text-hover-group-mention: hsl(183deg 60% 45% / 30%);
 }
 
 %dark-theme {
-    --color-default-text: hsl(0deg 0% 100%);
     --color-date: hsl(0deg 0% 100% / 75%);
     --color-background-private-message-header: hsl(46deg 15% 20%);
-    --color-text-private-message-header: hsl(0deg 0% 100%);
-    --color-background-private-message-content: hsl(46deg 10% 15%);
-    --color-text-message-header: hsl(0deg 0% 100%);
+    --color-background-private-message-content: hsl(46deg 7% 16%);
+    --color-background-stream-message-content: hsl(0deg 0% 15%);
     --color-message-header-icon-non-interactive: hsl(0deg 0% 100% / 30%);
     --color-message-header-icon-interactive: hsl(0deg 0% 100%);
-    --color-message-list-border: hsl(0deg 0% 7%);
-    --color-background: hsl(212deg 28% 18%);
+    --color-message-header-contents-border: hsl(0deg 0% 0% / 60%);
+    --color-private-message-header-border: hsl(0deg 0% 0% / 48%);
+    --color-message-header-contents-border-bottom: hsl(0deg 0% 0% / 50%);
+    --color-private-message-header-border-bottom: hsl(0deg 0% 0% / 37%);
+    --color-message-list-border: hsl(0deg 0% 0% / 40%);
+    --color-background: hsl(0deg 0% 11%);
+    --color-background-dropdown-input: hsl(225deg 6% 10%);
+    --color-background-navbar: hsl(0deg 0% 13%);
+    --color-background-active-narrow-filter: hsl(200deg 17% 18%);
+    --color-background-hover-narrow-filter: hsl(136deg 25% 73% / 20%);
+    --color-navbar-bottom-border: hsl(0deg 0% 0% / 60%);
+    --color-unread-marker: hsl(217deg 64% 59%);
+    --color-background-modal: hsl(212deg 28% 18%);
+
+    /* Text colors */
+    --color-text-default: hsl(0deg 0% 100% / 75%);
+    --color-text-message-view-header: hsl(0deg 0% 100% / 80%);
+    --color-text-message-header: hsl(0deg 0% 100% / 80%);
+    --color-text-sender-name: hsl(0deg 0% 100% / 85%);
+    --color-text-dropdown-input: hsl(0deg 0% 95%);
+    --color-text-other-mention: hsl(0deg 0% 100% / 80%);
+    --color-text-self-direct-mention: hsl(240deg 100% 88% / 100%);
+    --color-text-self-group-mention: hsl(184deg 52% 63% / 100%);
+
+    /* Mention pill colors */
     --color-background-direct-mention: hsl(240deg 13% 20%);
     --color-background-group-mention: hsl(180deg 13% 15%);
+    --color-background-text-direct-mention: hsl(240deg 52% 60% / 25%);
+    --color-background-text-hover-direct-mention: hsl(240deg 52% 60% / 45%);
+    --color-background-text-group-mention: hsl(183deg 52% 40% / 20%);
+    --color-background-text-hover-group-mention: hsl(183deg 52% 40% / 30%);
 }
 
 :root.dark-theme {
@@ -197,7 +304,6 @@ p.n-margin {
     display: none;
 }
 
-.scheduled-messages-loading-logo,
 .alert-zulip-logo,
 .top-messages-logo,
 .bottom-messages-logo {
@@ -228,28 +334,50 @@ p.n-margin {
     top: -2px;
 }
 
+/* See https://web.dev/animations-guide/#triggers before adding any funny animation properties here. */
+@keyframes feedback-slide-in {
+    from {
+        transform: translateY(-120%);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(50px);
+        opacity: 1;
+    }
+}
+
+@keyframes feedback-slide-out {
+    from {
+        transform: translateY(50px);
+        opacity: 1;
+    }
+
+    to {
+        transform: translateY(-120%);
+        opacity: 0;
+    }
+}
+
 #feedback_container {
     display: none;
-    position: absolute;
+    position: fixed;
     width: 400px;
     top: 0;
     left: calc(50vw - 220px);
     padding: 15px;
-
     background-color: hsl(0deg 0% 98%);
     border-radius: 5px;
     box-shadow: 0 0 30px hsl(0deg 0% 0% / 25%);
     z-index: 110;
 
-    animation-name: pulse;
-    animation-iteration-count: infinite;
-    animation-duration: 2s;
+    &.show-feedback-container {
+        display: block;
+        animation: feedback-slide-in 0.6s forwards;
+    }
 
-    transition-property: top, bottom;
-    transition-duration: 0.5s;
-
-    &.show {
-        top: 50px;
+    &.slide-out-feedback-container {
+        animation: feedback-slide-out 0.6s;
     }
 
     & h3 {
@@ -262,20 +390,6 @@ p.n-margin {
         font-weight: 200;
         margin: 0 0 0 10px;
         cursor: pointer;
-    }
-}
-
-@keyframes pulse {
-    0% {
-        box-shadow: 0 0 30px hsl(0deg 0% 0% / 35%);
-    }
-
-    50% {
-        box-shadow: 0 0 30px hsl(0deg 0% 0% / 15%);
-    }
-
-    100% {
-        box-shadow: 0 0 30px hsl(0deg 0% 0% / 35%);
     }
 }
 
@@ -295,17 +409,35 @@ p.n-margin {
     opacity: 1;
 }
 
-.header {
+#navbar-fixed-container {
     position: fixed;
-    z-index: 102; /* Needs to be higher than .alert-bar-container */
+    top: 0;
+    z-index: 102;
+}
+
+/* Adjust width of any fixed / absolute positioned elements that might be visible in
+   the background when a overlay / modal is open. */
+#navbar-fixed-container,
+#compose {
+    width: calc(100% - var(--disabled-scrollbar-width));
+}
+
+.header {
     width: 100%;
     height: var(--header-height);
     /* Since the headers are sticky, we need non-transparent background. */
-    background-color: hsl(0deg 0% 100%);
+    background-color: var(--color-background);
+    /* Add 1px box-shadow below header so that if there is a gap between sticky header
+       and header at some zoom level, it is covered by this */
+    box-shadow: 0 1px 0 0 var(--color-background);
 }
 
-#top_navbar {
-    border-bottom: 1px solid hsl(0deg 0% 0% / 20%);
+#navbar-middle .column-middle-inner,
+#userlist-toggle-button,
+.top_navbar_full_width,
+#message_view_header {
+    background-color: var(--color-background-navbar);
+    box-shadow: inset 0 -1px 0 var(--color-navbar-bottom-border);
 }
 
 #navbar_alerts_wrapper {
@@ -411,26 +543,31 @@ p.n-margin {
     }
 }
 
+.recent_topics_container #recent_topics_table {
+    margin-top: var(--navbar-fixed-height);
+}
+
 .app {
     width: 100%;
     height: 100%;
-    overflow-y: scroll;
     z-index: 99;
-    -webkit-overflow-scrolling: touch;
 }
 
 .app-main,
 .header-main {
     width: 100%;
-    /* `max-width` is changed based on `fluid_layout_width` setting in
-       `scroll_bar.js`. User may or may not see a flash of mispositioned content
-       based on how quickly the JS code is executed. */
-    max-width: 1400px;
     min-width: 950px;
     margin: 0 auto;
     padding: 0;
     position: relative;
-    background-color: hsl(0deg 0% 100%);
+}
+
+body.has-overlay-scrollbar {
+    /* Move simplebar scrollbar to the left so that
+       browser scrollbar doesn't overlap with it. */
+    .column-right .simplebar-track.simplebar-vertical {
+        right: var(--browser-overlay-scrollbar-width);
+    }
 }
 
 .column-right {
@@ -508,6 +645,14 @@ p.n-margin {
     top: 0;
 }
 
+#message_feed_container,
+.column-left .left-sidebar,
+.column-right .right-sidebar {
+    padding-top: calc(
+        var(--navbar-fixed-height) + var(--header-padding-bottom)
+    );
+}
+
 .app-main {
     height: 100%;
     min-height: 100%;
@@ -515,7 +660,6 @@ p.n-margin {
     .column-left .left-sidebar,
     .column-right .right-sidebar {
         position: fixed;
-        margin-top: var(--sidebar-top);
         z-index: 100;
     }
 
@@ -941,14 +1085,14 @@ td.pointer {
     font-size: 12px;
     font-weight: normal;
     text-align: right;
-    opacity: 0.6;
-    color: var(--color-default-text);
+    opacity: 0.8;
+    color: var(--color-text-default);
     font-feature-settings: "pnum" on, "lnum" on;
     letter-spacing: 0.02em;
     /* Disable blue link styling for the message timestamp link. */
     &:hover {
         text-decoration: none;
-        color: var(--color-default-text);
+        color: var(--color-text-default);
     }
 }
 
@@ -956,8 +1100,8 @@ td.pointer {
     display: block;
     font-size: 12px;
     text-align: right;
-    opacity: 0.6;
-    color: var(--color-default-text);
+    opacity: 0.8;
+    color: var(--color-text-default);
     animation: rotate 1s infinite linear;
 }
 
@@ -966,7 +1110,6 @@ td.pointer {
    but it works. */
 .alert-msg {
     color: hsl(170deg 48% 54%);
-    background-color: hsl(0deg 0% 100%);
     z-index: 999;
     font-weight: 400;
     display: none;
@@ -1005,7 +1148,6 @@ td.pointer {
 
         .zulip-icon-ellipsis-v-solid {
             padding: 2px 5.33px;
-            outline: none;
         }
     }
 
@@ -1064,7 +1206,7 @@ td.pointer {
 
         .failed_message_action {
             opacity: 1 !important;
-            color: hsl(0deg 100% 50%);
+            color: var(--color-failed-message-send-icon);
             font-weight: bold;
             padding: 1px;
         }
@@ -1092,29 +1234,6 @@ td.pointer {
     }
 }
 
-.messagebox {
-    position: relative;
-    word-wrap: break-word;
-    cursor: pointer;
-    vertical-align: top;
-    border: none;
-    padding: 0 5px;
-
-    &:hover .message_controls,
-    &:focus-within .message_controls,
-    &:hover .message_failed,
-    &:focus-within .message_failed {
-        .empty-star:hover {
-            cursor: pointer;
-        }
-
-        > div {
-            opacity: 1;
-            visibility: visible;
-        }
-    }
-}
-
 .message_header {
     vertical-align: middle;
     text-align: left;
@@ -1134,7 +1253,8 @@ td.pointer {
         align-items: center;
         justify-content: space-between;
         height: 28px;
-        border: 1px solid var(--color-message-list-border);
+        border: 1px solid var(--color-message-header-contents-border);
+        border-bottom-color: var(--color-message-header-contents-border-bottom);
         border-radius: 7px 7px 0 0;
     }
 
@@ -1172,6 +1292,8 @@ td.pointer {
             .message_label_clickable.narrows_by_topic {
                 position: relative;
                 top: 0.5px;
+                overflow: hidden;
+                text-overflow: ellipsis;
             }
         }
 
@@ -1205,7 +1327,7 @@ td.pointer {
 
             .messagebox {
                 border-radius: 0 0 7px 7px;
-                padding-bottom: 5px;
+                padding-bottom: 4px;
             }
         }
 
@@ -1218,13 +1340,18 @@ td.pointer {
 
     .message_header {
         position: sticky;
-        padding-top: var(--header-padding-bottom);
-        top: var(--header-height);
+        top: var(--navbar-fixed-height);
         /* Needs to be higher than the z-index of date_row. */
         z-index: 4;
         box-shadow: 0 -1px 0 0 var(--color-background);
 
+        .message-header-contents {
+            margin-top: var(--header-padding-bottom);
+        }
+
         &.sticky_header {
+            box-shadow: var(--unread-marker-left) 0 0 0 var(--color-background);
+
             .recipient_row_date {
                 display: block;
             }
@@ -1323,8 +1450,11 @@ td.pointer {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 8px 8px 8px 14px;
-    column-gap: 10px;
+    border-radius: 5px;
+    border: 1px solid;
+    font-size: 15px;
+    line-height: 18px;
+    margin-bottom: 20px;
 
     #mark_as_read_turned_off_content {
         margin: 0;
@@ -1335,13 +1465,90 @@ td.pointer {
         display: flex;
     }
 
+    .banner-action-button {
+        border: none;
+        border-radius: 4px;
+        padding: 5px 10px;
+        font-weight: 600;
+        margin-left: 10px;
+        margin-top: 4.5px;
+        margin-bottom: 4.5px;
+        height: 32px;
+        white-space: nowrap;
+    }
+
+    & p {
+        margin: 0; /* override bootstrap */
+        /* 5px right padding + 10px left-margin of the neighbouring button will match the left padding */
+        padding: 8px 5px 8px 15px;
+    }
+
     #mark_as_read_close {
-        align-self: flex-start;
-        margin-top: -5px;
-        /* override bootstrap */
-        top: 0;
-        right: 0;
-        position: static;
+        font-size: 16px;
+        text-decoration: none;
+        padding: 9px 8px;
+    }
+
+    &.warning {
+        background-color: hsl(50deg 75% 92%);
+        border-color: hsl(38deg 44% 27% / 40%);
+        color: hsl(38deg 44% 27%);
+
+        #mark_as_read_close {
+            color: hsl(38deg 44% 27% / 50%);
+
+            &:hover {
+                color: hsl(38deg 44% 27%);
+            }
+
+            &:active {
+                color: hsl(38deg 44% 27% / 75%);
+            }
+        }
+
+        .banner-action-button {
+            background-color: hsl(38deg 44% 27% / 10%);
+            color: inherit;
+
+            &:hover {
+                background-color: hsl(38deg 44% 27% / 12%);
+            }
+
+            &:active {
+                background-color: hsl(38deg 44% 27% / 15%);
+            }
+        }
+    }
+
+    &.info {
+        background-color: hsl(204deg 58% 92%);
+        border-color: hsl(204deg 49% 29% / 40%);
+        color: hsl(204deg 49% 29%);
+
+        #mark_as_read_close {
+            color: hsl(204deg 49% 29% / 50%);
+
+            &:hover {
+                color: hsl(204deg 49% 29%);
+            }
+
+            &:active {
+                color: hsl(204deg 49% 29% / 75%);
+            }
+        }
+
+        .banner-action-button {
+            background-color: hsl(204deg 49% 29% / 10%);
+            color: inherit;
+
+            &:hover {
+                background-color: hsl(204deg 49% 29% / 12%);
+            }
+
+            &:active {
+                background-color: hsl(204deg 49% 29% / 15%);
+            }
+        }
     }
 }
 
@@ -1391,6 +1598,8 @@ td.pointer {
     background-color: var(--color-background);
 
     .message-header-contents {
+        border-color: var(--color-private-message-header-border);
+        border-bottom-color: var(--color-private-message-header-border-bottom);
         background-color: var(--color-background-private-message-header);
     }
 
@@ -1414,6 +1623,11 @@ td.pointer {
             width: 16px;
             height: 16px;
         }
+
+        .private_message_header_name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
     }
 }
 
@@ -1429,45 +1643,12 @@ td.pointer {
     }
 }
 
-.recipient_row .message_row:first-child .unread_marker {
-    top: 0;
-}
-
-.unread_marker {
-    display: block;
-    position: absolute;
-    height: 100%;
-    top: 0;
-    opacity: 0;
-    z-index: 2;
-    bottom: 1px;
-    transition: all 0.3s ease-out;
-
-    &.slow_fade {
-        transition: all 2s ease-out;
-    }
-
-    &.fast_fade {
-        transition: all 0.3s ease-out;
-    }
-}
-
-.unread-marker-fill {
-    border-left: 2px solid hsl(107deg 74% 29%);
-    height: 100%;
-}
-
-.unread .unread_marker {
-    transition: all 0.3s ease-out;
-    opacity: 1;
-}
-
 .selected_message {
     .messagebox-content {
         /* We add an outline and shift it inside the message so that without
            any vertical padding changes, we can have the outline surrounding
            the message without overflowing the boundary of the message in any case. */
-        outline: 1px solid hsl(217deg 64% 59% / 60%);
+        outline: 1px solid hsl(217deg 64% 59%);
         border-radius: 5px;
         outline-offset: -1px;
     }
@@ -1487,6 +1668,11 @@ td.pointer {
 .sender_name-in-status {
     margin-right: 3px;
     font-weight: 700;
+}
+
+.sender_name,
+.sender_name-in-status {
+    color: var(--color-text-sender-name);
 }
 
 .sender_name_hovered {
@@ -1566,38 +1752,6 @@ div.message_table {
     width: 100%;
 }
 
-.message_row {
-    position: relative;
-    border-left: 1px solid var(--color-message-list-border);
-    border-right: 1px solid var(--color-message-list-border);
-
-    &.group_mention {
-        background-color: var(--color-background-group-mention);
-    }
-
-    &.direct_mention {
-        background-color: var(--color-background-direct-mention);
-    }
-
-    .date_row {
-        /* We only want padding for the date rows between recipient blocks */
-        padding-bottom: 0;
-        background-color: var(--color-background);
-
-        & span {
-            font-size: calc(12em / 14);
-            font-style: normal;
-            font-weight: 600;
-            line-height: 17px; /* identical to box height, or 131% */
-            text-align: right;
-            letter-spacing: 0.04em;
-            color: var(--color-date);
-            /* To match time in message row and date in recipient row. */
-            padding-right: 6px;
-        }
-    }
-}
-
 div.focused_table {
     display: block;
 }
@@ -1640,6 +1794,10 @@ div.focused_table {
     text-align: right;
     display: inline;
     color: hsl(0deg 0% 63%);
+
+    &.expired {
+        color: hsl(4deg 58% 33%);
+    }
 }
 
 .message_edit_tooltip {
@@ -1691,7 +1849,7 @@ div.focused_table {
     }
 }
 
-#inline_topic_edit {
+.inline_topic_edit {
     margin-bottom: 5px;
     width: 206px;
 
@@ -1715,7 +1873,7 @@ div.focused_table {
     justify-content: flex-start;
 }
 
-#inline_topic_edit:focus,
+.inline_topic_edit:focus,
 #message_edit_topic:focus {
     outline: none;
 }
@@ -1802,11 +1960,6 @@ div.focused_table {
     font-weight: bold;
 }
 
-.top-navbar-border {
-    border-right: 1px solid hsl(0deg 0% 88%);
-    border-left: 1px solid hsl(0deg 0% 88%);
-}
-
 .search_icon {
     /* These rules match the .dropdown-toggle CSS for the gear menu. */
     color: inherit;
@@ -1819,6 +1972,7 @@ div.focused_table {
 }
 
 #message_view_header {
+    color: var(--color-text-message-view-header);
     z-index: 2;
     float: left;
     height: var(--header-height);
@@ -1899,7 +2053,7 @@ div.focused_table {
     .narrow_description {
         background: none;
         font-size: 14px;
-        color: hsl(0deg 0% 40%);
+        color: inherit;
         font-weight: 400;
         line-height: 20px;
     }
@@ -2060,7 +2214,6 @@ div.focused_table {
     color: hsl(0deg 0% 52%);
     display: block;
     position: relative;
-    background-color: hsl(0deg 0% 89%);
     width: 40px;
     height: 19px;
     padding-top: 12px;
@@ -2164,7 +2317,7 @@ div.focused_table {
 
 nav {
     .column-left {
-        text-align: center;
+        margin-left: 15px;
 
         .nav-logo {
             display: inline-block;
@@ -2345,7 +2498,7 @@ select.custom-expiration-time,
 select.invite-as {
     width: 220px;
     height: 30px;
-    padding: 4px 6px;
+    padding: 0 6px;
     color: hsl(0deg 0% 33%);
     border-radius: 4px;
     border: 1px solid hsl(0deg 0% 80%);
@@ -2585,10 +2738,6 @@ select.invite-as {
     margin-left: -15px;
 }
 
-#message_feed_container {
-    padding-top: var(--sidebar-top);
-}
-
 .screen {
     position: absolute;
     left: 0;
@@ -2699,6 +2848,10 @@ select.invite-as {
     & i.fa-copy {
         cursor: pointer;
     }
+
+    .fa-copy:hover {
+        color: hsl(170deg 48% 54%);
+    }
 }
 
 @media (width < $xl_min) {
@@ -2717,18 +2870,18 @@ select.invite-as {
             right: 15px;
             top: 0;
 
+            .simplebar-track.simplebar-vertical {
+                right: 0;
+            }
+
             .right-sidebar {
-                background-color: hsl(0deg 0% 100%);
                 box-shadow: 0 -2px 3px 0 hsl(0deg 0% 0% / 10%);
                 border-left: 1px solid hsl(0deg 0% 87%);
-
-                /* We use both margin and padding to
-                   hide little artifacts from showing up in
-                   the gutter below the navbar. */
-                margin-top: var(--header-height);
-                padding: var(--header-padding-bottom) 15px 0 15px;
+                padding-right: 15px;
+                padding-left: 15px;
                 height: 100%;
                 right: 0;
+                background-color: var(--color-background);
             }
         }
     }
@@ -2780,16 +2933,9 @@ select.invite-as {
             top: 0;
 
             .left-sidebar {
-                background-color: hsl(0deg 0% 100%);
+                background-color: var(--color-background);
                 box-shadow: 0 2px 3px 0 hsl(0deg 0% 0% / 10%);
                 border-right: 1px solid hsl(0deg 0% 87%);
-
-                /* We use both margin and padding to
-                   hide little artifacts from showing up in
-                   the gutter below the navbar. */
-                margin-top: var(--header-height);
-                padding-top: var(--header-padding-bottom);
-
                 height: 100%;
                 padding-left: 10px;
                 width: var(--left-sidebar-width);
@@ -2873,6 +3019,10 @@ select.invite-as {
         height: var(--header-height);
     }
 
+    #searchbox_form {
+        height: calc(var(--header-height) - 1px);
+    }
+
     .spectator_narrow_login_button {
         height: var(--header-height) !important;
     }
@@ -2896,10 +3046,6 @@ select.invite-as {
         background: none !important;
         padding: 0 !important;
         border: none !important;
-    }
-
-    #floating_recipient_bar {
-        top: var(--sidebar-top);
     }
 
     .message_content {
@@ -2996,29 +3142,91 @@ select.invite-as {
     }
 }
 
-.recipient_row {
-    /* See https://stackoverflow.com/questions/2717480/css-selector-for-first-element-with-class/8539107#8539107
-       for details on how this works */
-    .message_row.unread {
-        .date_row {
-            position: relative;
-            /* Needs to be lower than the z-index of message_header. */
-            z-index: 3;
-        }
-    }
-
-    /* Select all but the first .message_row.unread,
-       and remove the properties set from the previous rule. */
-    .message_row.unread ~ .message_row.unread {
-        .date_row {
-            position: unset;
-            z-index: 0;
-        }
-    }
-}
-
 .simplebar-content-wrapper {
     /* `simplebar-content-wrapper` has `tabindex=0` set, which makes it focusable
         but we don't want it to have an outline when focused anywhere in the app. */
     outline: none;
+}
+
+.dropdown-list-container {
+    .dropdown-list-search {
+        display: flex;
+
+        .dropdown-list-search-input {
+            background: var(--color-background-dropdown-input);
+            color: var(--color-text-dropdown-input);
+            width: 100%;
+            margin: 4px 4px 2px;
+
+            &:focus {
+                background: hsl(0deg 0% 100%);
+                border: 1px solid hsl(229.09deg 21.57% 10% / 80%);
+                box-shadow: 0 0 6px hsl(228deg 9.8% 20% / 30%);
+            }
+        }
+    }
+
+    .dropdown-list-item-common-styles {
+        padding: 3px 10px 3px 8px;
+        font-weight: 400;
+        line-height: 20px;
+        white-space: normal;
+    }
+
+    .dropdown-list-wrapper {
+        /* Sync with `max-height` in dropdown_widget. */
+        max-height: 210px;
+        min-width: 200px;
+
+        .dropdown-list {
+            list-style: none;
+            margin: 0;
+
+            .list-item:focus {
+                background-color: hsl(220deg 12% 4.9% / 5%);
+                outline: none;
+            }
+
+            .list-item a {
+                display: block;
+                color: hsl(0deg 0% 20%);
+
+                .stream-privacy-type-icon {
+                    font-size: 13px;
+                    width: 13px;
+                    height: 13px;
+                    padding-right: 2px;
+                }
+
+                &:hover {
+                    text-decoration: none;
+                    background-color: hsl(220deg 12% 4.9% / 5%);
+                }
+
+                &:focus {
+                    text-decoration: none;
+                    outline: none;
+                }
+            }
+        }
+    }
+
+    .no-dropdown-items {
+        color: hsl(0deg 0% 60%);
+        display: none;
+    }
+}
+
+#scheduled_messages_overlay .error-icon-message-recipient {
+    width: 15px;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-grow: 1;
+    color: var(--color-failed-message-send-icon);
+
+    .zulip-icon {
+        padding: 5px;
+    }
 }

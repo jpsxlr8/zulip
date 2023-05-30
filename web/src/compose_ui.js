@@ -260,10 +260,7 @@ export function set_compose_box_top(set_top) {
         // using CSS. If that wasn't the case, we could have somehow
         // refactored the HTML so as to consider only the space below
         // below the `#navbar_alerts` as `height: 100%` of `#compose`.
-        const compose_top =
-            $("#navbar_alerts_wrapper").height() +
-            $(".header").height() +
-            Number.parseInt($(".header").css("paddingBottom"), 10);
+        const compose_top = $("#navbar-fixed-container").height();
         $("#compose").css("top", compose_top + "px");
     } else {
         $("#compose").css("top", "");
@@ -281,9 +278,6 @@ export function make_compose_box_full_size() {
 
     // Set the `top` property of compose-box.
     set_compose_box_top(true);
-    // The compose select dropup should now open down because it's
-    // at the top of the screen.
-    $("#id_compose_select_recipient").removeClass("dropup").addClass("dropdown");
 
     $(".collapse_composebox_button").show();
     $(".expand_composebox_button").hide();
@@ -298,9 +292,6 @@ export function make_compose_box_original_size() {
 
     // Unset the `top` property of compose-box.
     set_compose_box_top(false);
-    // The compose select dropup should now open up because it's
-    // near the bottom of the screen.
-    $("#id_compose_select_recipient").removeClass("dropdown").addClass("dropup");
 
     // Again initialise the compose textarea as it was destroyed
     // when compose box was made full screen

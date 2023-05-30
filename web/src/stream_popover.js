@@ -18,10 +18,10 @@ import * as resize from "./resize";
 import * as settings_data from "./settings_data";
 import * as stream_bar from "./stream_bar";
 import * as stream_color from "./stream_color";
-import * as stream_data from "./stream_data";
 import * as stream_settings_ui from "./stream_settings_ui";
 import * as sub_store from "./sub_store";
 import * as ui_report from "./ui_report";
+import * as ui_util from "./ui_util";
 import * as unread_ops from "./unread_ops";
 // We handle stream popovers and topic popovers in this
 // module.  Both are popped up from the left sidebar.
@@ -94,7 +94,7 @@ function stream_popover_sub(e) {
     const stream_id = elem_to_stream_id($elem);
     const sub = sub_store.get(stream_id);
     if (!sub) {
-        blueslip.error("Unknown stream: " + stream_id);
+        blueslip.error("Unknown stream", {stream_id});
         return undefined;
     }
     return sub;
@@ -171,7 +171,7 @@ export function build_move_topic_to_stream_popover(
     only_topic_edit,
     message,
 ) {
-    const current_stream_name = stream_data.maybe_get_stream_name(current_stream_id);
+    const current_stream_name = sub_store.maybe_get_stream_name(current_stream_id);
     const args = {
         topic_name,
         current_stream_id,
@@ -325,7 +325,7 @@ export function build_move_topic_to_stream_popover(
     }
 
     function set_stream_topic_typeahead() {
-        const $topic_input = $("#move_topic_form .inline_topic_edit");
+        const $topic_input = $("#move_topic_form .move_messages_edit_topic");
         const new_stream_id = Number(stream_widget.value(), 10);
         const new_stream_name = sub_store.get(new_stream_id).name;
         $topic_input.data("typeahead").unlisten();
@@ -340,7 +340,7 @@ export function build_move_topic_to_stream_popover(
     function move_topic_post_render() {
         $("#move_topic_modal .dialog_submit_button").prop("disabled", true);
 
-        const $topic_input = $("#move_topic_form .inline_topic_edit");
+        const $topic_input = $("#move_topic_form .move_messages_edit_topic");
         composebox_typeahead.initialize_topic_edit_typeahead(
             $topic_input,
             current_stream_name,
@@ -376,9 +376,17 @@ export function build_move_topic_to_stream_popover(
         stream_widget.setup();
 
         $("#select_stream_widget .dropdown-toggle").prop("disabled", disable_stream_input);
-        $("#move_topic_modal .inline_topic_edit").on("input", () => {
+        $("#move_topic_modal .move_messages_edit_topic").on("input", () => {
             update_submit_button_disabled_state(stream_widget.value());
         });
+    }
+
+    function focus_on_move_modal_render() {
+        if (!disable_stream_input && args.disable_topic_input) {
+            $("#select_stream_widget .button").trigger("focus");
+        } else {
+            ui_util.place_caret_at_end($(".move_messages_edit_topic")[0]);
+        }
     }
 
     dialog_widget.launch({
@@ -388,6 +396,7 @@ export function build_move_topic_to_stream_popover(
         id: "move_topic_modal",
         on_click: move_topic,
         loading_spinner: true,
+        on_shown: focus_on_move_modal_render,
         post_render: move_topic_post_render,
     });
 }
@@ -414,7 +423,7 @@ export function register_click_handlers() {
         if (e.type === "keypress" && !keydown_util.is_enter_event(e)) {
             return;
         }
-        const stream_name = stream_data.maybe_get_stream_name(
+        const stream_name = sub_store.maybe_get_stream_name(
             Number.parseInt(stream_widget.value(), 10),
         );
 

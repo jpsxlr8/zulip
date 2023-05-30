@@ -846,7 +846,7 @@ Output:
             if any(
                 addr == email_address or addr.endswith(f" <{email_address}>") for addr in message.to
             ):
-                match = re.search(url_pattern, message.body)
+                match = re.search(url_pattern, str(message.body))
                 assert match is not None
 
                 if email_subject_contains:
@@ -1171,7 +1171,7 @@ Output:
             for item in items:
                 print(item)
             print(f"\nexpected length: {count}\nactual length: {actual_count}")
-            raise AssertionError(f"{str(type(items))} is of unexpected size!")
+            raise AssertionError(f"{type(items)} is of unexpected size!")
 
     @contextmanager
     def assert_database_query_count(

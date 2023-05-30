@@ -27,16 +27,6 @@ const recent_topics_util = mock_esm("../src/recent_topics_util", {
     is_visible() {},
 });
 
-let stream_value = "";
-compose_recipient.compose_recipient_widget = {
-    value() {
-        return stream_value;
-    },
-    render(val) {
-        stream_value = val;
-    },
-};
-
 function empty_narrow_html(title, html, search_data) {
     const opts = {
         title,
@@ -247,7 +237,7 @@ run_test("show_empty_narrow_message", ({mock_template}) => {
         $(".empty_feed_notice_main").html(),
         empty_narrow_html(
             "",
-            'translated HTML: This is not a <a href="/help/public-access-option">publicly accessible</a> conversation.',
+            'translated HTML: This is not a <a target="_blank" rel="noopener noreferrer" href="/help/public-access-option">publicly accessible</a> conversation.',
         ),
     );
 
@@ -260,7 +250,7 @@ run_test("show_empty_narrow_message", ({mock_template}) => {
         $(".empty_feed_notice_main").html(),
         empty_narrow_html(
             "",
-            'translated HTML: This is not a <a href="/help/public-access-option">publicly accessible</a> conversation.',
+            'translated HTML: This is not a <a target="_blank" rel="noopener noreferrer" href="/help/public-access-option">publicly accessible</a> conversation.',
         ),
     );
 
@@ -283,7 +273,7 @@ run_test("show_empty_narrow_message", ({mock_template}) => {
         $(".empty_feed_notice_main").html(),
         empty_narrow_html(
             "translated: You have no starred messages.",
-            'translated HTML: Learn more about starring messages <a href="/help/star-a-message">here</a>.',
+            'translated HTML: Learn more about starring messages <a target="_blank" rel="noopener noreferrer" href="/help/star-a-message">here</a>.',
         ),
     );
 
@@ -293,7 +283,7 @@ run_test("show_empty_narrow_message", ({mock_template}) => {
         $(".empty_feed_notice_main").html(),
         empty_narrow_html(
             "translated: You haven't been mentioned yet!",
-            'translated HTML: Learn more about mentions <a href="/help/mention-a-user-or-group">here</a>.',
+            'translated HTML: Learn more about mentions <a target="_blank" rel="noopener noreferrer" href="/help/mention-a-user-or-group">here</a>.',
         ),
     );
 
@@ -451,10 +441,7 @@ run_test("show_empty_narrow_message", ({mock_template}) => {
     narrow_banner.show_empty_narrow_message();
     assert.equal(
         $(".empty_feed_notice_main").html(),
-        empty_narrow_html(
-            "translated: You have no direct messages including Example Bot yet.",
-            'translated HTML: Why not <a href="#" class="empty_feed_compose_private">start the conversation</a>?',
-        ),
+        empty_narrow_html("translated: You have no direct messages including Example Bot yet."),
     );
 
     // sending direct messages enabled
@@ -464,10 +451,7 @@ run_test("show_empty_narrow_message", ({mock_template}) => {
     narrow_banner.show_empty_narrow_message();
     assert.equal(
         $(".empty_feed_notice_main").html(),
-        empty_narrow_html(
-            "translated: You have no direct messages including Alice Smith yet.",
-            'translated HTML: Why not <a href="#" class="empty_feed_compose_private">start the conversation</a>?',
-        ),
+        empty_narrow_html("translated: You have no direct messages including Alice Smith yet."),
     );
 
     set_filter([["dm-including", me.email]]);
@@ -668,8 +652,8 @@ run_test("show_invalid_narrow_message", ({mock_template}) => {
     );
 });
 
-run_test("narrow_to_compose_target errors", ({disallow_rewire}) => {
-    compose_recipient.on_compose_select_recipient_update = () => {};
+run_test("narrow_to_compose_target errors", ({override_rewire, disallow_rewire}) => {
+    override_rewire(compose_recipient, "on_compose_select_recipient_update", () => {});
     disallow_rewire(narrow, "activate");
 
     // No-op when not composing.
@@ -683,6 +667,7 @@ run_test("narrow_to_compose_target errors", ({disallow_rewire}) => {
 });
 
 run_test("narrow_to_compose_target streams", ({override_rewire}) => {
+    override_rewire(compose_recipient, "on_compose_select_recipient_update", () => {});
     const args = {called: false};
     override_rewire(narrow, "activate", (operators, opts) => {
         args.operators = operators;

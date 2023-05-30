@@ -38,6 +38,7 @@ import * as popovers from "./popovers";
 import * as reactions from "./reactions";
 import * as recent_topics_ui from "./recent_topics_ui";
 import * as recent_topics_util from "./recent_topics_util";
+import * as scheduled_messages_overlay_ui from "./scheduled_messages_overlay_ui";
 import * as search from "./search";
 import * as settings_data from "./settings_data";
 import * as spectators from "./spectators";
@@ -443,7 +444,12 @@ export function process_enter_key(e) {
     // This handles when pressing Enter while looking at drafts.
     // It restores draft that is focused.
     if (overlays.drafts_open()) {
-        drafts.drafts_handle_events(e, "enter");
+        drafts.handle_keyboard_events(e, "enter");
+        return true;
+    }
+
+    if (overlays.scheduled_messages_open()) {
+        scheduled_messages_overlay_ui.handle_keyboard_events(e, "enter");
         return true;
     }
 
@@ -583,7 +589,7 @@ export function process_shift_tab_key() {
     }
 
     if ($("#stream_message_recipient_topic").is(":focus")) {
-        compose_recipient.open_compose_stream_dropup();
+        compose_recipient.open_compose_recipient_dropdown();
         return true;
     }
 
@@ -636,7 +642,8 @@ export function process_hotkey(e, hotkey) {
         return emoji_picker.navigate(event_name);
     }
 
-    if (overlays.is_modal_open()) {
+    // `list_util` will process the event in send later modal.
+    if (overlays.is_modal_open() && overlays.active_modal() !== "#send_later_modal") {
         return false;
     }
 
@@ -650,7 +657,11 @@ export function process_hotkey(e, hotkey) {
         case "backspace":
         case "delete":
             if (overlays.drafts_open()) {
-                drafts.drafts_handle_events(e, event_name);
+                drafts.handle_keyboard_events(e, event_name);
+                return true;
+            }
+            if (overlays.scheduled_messages_open()) {
+                scheduled_messages_overlay_ui.handle_keyboard_events(e, event_name);
                 return true;
             }
     }

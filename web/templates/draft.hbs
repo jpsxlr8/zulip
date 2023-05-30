@@ -24,7 +24,7 @@
             <div class="message-header-contents">
                 <div class="message_label_clickable stream_label">
                     <span class="private_message_header_icon"><i class="zulip-icon zulip-icon-user"></i></span>
-                    {{t "You and {recipients}" }}
+                    <span class="private_message_header_name">{{t "You and {recipients}" }}</span>
                 </div>
                 <div class="recipient_row_date" title="{{t 'Last modified'}}">{{ time_stamp }}</div>
             </div>
@@ -36,15 +36,7 @@
                     <div class="message_top_line">
                         <div class="draft_controls overlay_message_controls">
                             <i class="fa fa-pencil fa-lg restore-draft restore-overlay-message tippy-zulip-tooltip" aria-hidden="true" data-tooltip-template-id="restore-draft-tooltip-template"></i>
-                            <template id="restore-draft-tooltip-template">
-                                {{t 'Restore draft' }}
-                                {{tooltip_hotkey_hints "Enter"}}
-                            </template>
                             <i class="fa fa-trash-o fa-lg delete-draft delete-overlay-message tippy-zulip-tooltip" aria-hidden="true" data-tooltip-template-id="delete-draft-tooltip-template"></i>
-                            <template id="delete-draft-tooltip-template">
-                                {{t 'Delete draft' }}
-                                {{tooltip_hotkey_hints "Backspace"}}
-                            </template>
                         </div>
                     </div>
                     <div class="message_content rendered_markdown restore-draft restore-overlay-message" title="{{t 'Restore draft' }}">{{rendered_markdown content}}</div>

@@ -101,7 +101,7 @@ from zerver.lib.types import (
     UserFieldElement,
     Validator,
 )
-from zerver.lib.utils import make_safe_digest
+from zerver.lib.utils import generate_api_key, make_safe_digest
 from zerver.lib.validator import (
     check_date,
     check_int,
@@ -398,8 +398,6 @@ class Realm(models.Model):  # type: ignore[django-manager-missing] # django-stub
     ]
 
     MOVE_MESSAGES_BETWEEN_STREAMS_POLICY_TYPES = INVITE_TO_REALM_POLICY_TYPES
-
-    DEFAULT_COMMUNITY_TOPIC_EDITING_LIMIT_SECONDS = 259200
 
     DEFAULT_MOVE_MESSAGE_LIMIT_SECONDS = 7 * SECONDS_PER_DAY
 
@@ -1814,8 +1812,15 @@ class UserProfile(AbstractBaseUser, PermissionsMixin, UserBaseSettings):  # type
     full_name = models.CharField(max_length=MAX_NAME_LENGTH)
 
     date_joined = models.DateTimeField(default=timezone_now)
+
+    # Terms of Service version number that this user has accepted. We
+    # use the special value TOS_VERSION_BEFORE_FIRST_LOGIN for users
+    # whose account was created without direct user interaction (via
+    # the API or a data import), and null for users whose account is
+    # fully created on servers that do not have a configured ToS.
+    TOS_VERSION_BEFORE_FIRST_LOGIN = "-1"
     tos_version = models.CharField(null=True, max_length=10)
-    api_key = models.CharField(max_length=API_KEY_LENGTH)
+    api_key = models.CharField(max_length=API_KEY_LENGTH, default=generate_api_key, unique=True)
 
     # A UUID generated on user creation. Introduced primarily to
     # provide a unique key for a user for the mobile push
@@ -3554,8 +3559,12 @@ class ArchivedAttachment(AbstractAttachment):
 class Attachment(AbstractAttachment):
     messages = models.ManyToManyField(Message)
 
+    # This is only present for Attachment and not ArchiveAttachment.
+    # because ScheduledMessage is not subject to archiving.
+    scheduled_messages = models.ManyToManyField("ScheduledMessage")
+
     def is_claimed(self) -> bool:
-        return self.messages.count() > 0
+        return self.messages.count() > 0 or self.scheduled_messages.count() > 0
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -3691,7 +3700,7 @@ def get_old_unclaimed_attachments(
     """
     The logic in this function is fairly tricky. The essence is that
     a file should be cleaned up if and only if it not referenced by any
-    Message or ArchivedMessage. The way to find that out is through the
+    Message, ScheduledMessage or ArchivedMessage. The way to find that out is through the
     Attachment and ArchivedAttachment tables.
     The queries are complicated by the fact that an uploaded file
     may have either only an Attachment row, only an ArchivedAttachment row,
@@ -3699,14 +3708,24 @@ def get_old_unclaimed_attachments(
     linking to it have been archived.
     """
     delta_weeks_ago = timezone_now() - datetime.timedelta(weeks=weeks_ago)
+
+    # The Attachment vs ArchivedAttachment queries are asymmetric because only
+    # Attachment has the scheduled_messages relation.
     old_attachments = Attachment.objects.annotate(
         has_other_messages=Exists(
             ArchivedAttachment.objects.filter(id=OuterRef("id")).exclude(messages=None)
         )
-    ).filter(messages=None, create_time__lt=delta_weeks_ago, has_other_messages=False)
+    ).filter(
+        messages=None,
+        scheduled_messages=None,
+        create_time__lt=delta_weeks_ago,
+        has_other_messages=False,
+    )
     old_archived_attachments = ArchivedAttachment.objects.annotate(
         has_other_messages=Exists(
-            Attachment.objects.filter(id=OuterRef("id")).exclude(messages=None)
+            Attachment.objects.filter(id=OuterRef("id"))
+            .exclude(messages=None)
+            .exclude(scheduled_messages=None)
         )
     ).filter(messages=None, create_time__lt=delta_weeks_ago, has_other_messages=False)
 
@@ -4281,7 +4300,7 @@ class ScheduledMessageNotificationEmail(models.Model):
     scheduled_timestamp = models.DateTimeField(db_index=True)
 
 
-class StreamScheduledMessageAPI(TypedDict):
+class APIScheduledStreamMessageDict(TypedDict):
     scheduled_message_id: int
     to: int
     type: str
@@ -4289,15 +4308,17 @@ class StreamScheduledMessageAPI(TypedDict):
     rendered_content: str
     topic: str
     scheduled_delivery_timestamp: int
+    failed: bool
 
 
-class DirectScheduledMessageAPI(TypedDict):
+class APIScheduledDirectMessageDict(TypedDict):
     scheduled_message_id: int
     to: List[int]
     type: str
     content: str
     rendered_content: str
     scheduled_delivery_timestamp: int
+    failed: bool
 
 
 class ScheduledMessage(models.Model):
@@ -4311,6 +4332,13 @@ class ScheduledMessage(models.Model):
     realm = models.ForeignKey(Realm, on_delete=CASCADE)
     scheduled_timestamp = models.DateTimeField(db_index=True)
     delivered = models.BooleanField(default=False)
+    delivered_message = models.ForeignKey(Message, null=True, on_delete=CASCADE)
+    has_attachment = models.BooleanField(default=False, db_index=True)
+
+    # Metadata for messages that failed to send when their scheduled
+    # moment arrived.
+    failed = models.BooleanField(default=False)
+    failure_message = models.TextField(null=True)
 
     SEND_LATER = 1
     REMIND = 2
@@ -4325,6 +4353,32 @@ class ScheduledMessage(models.Model):
         default=SEND_LATER,
     )
 
+    class Meta:
+        indexes = [
+            # We expect a large number of delivered scheduled messages
+            # to accumulate over time. This first index is for the
+            # deliver_scheduled_messages worker.
+            models.Index(
+                name="zerver_unsent_scheduled_messages_by_time",
+                fields=["scheduled_timestamp"],
+                condition=Q(
+                    delivered=False,
+                    failed=False,
+                ),
+            ),
+            # This index is for displaying scheduled messages to the
+            # user themself via the API; we don't filter failed
+            # messages since we will want to display those so that
+            # failures don't just disappear into a black hole.
+            models.Index(
+                name="zerver_unsent_scheduled_messages_by_user",
+                fields=["sender", "delivery_type", "scheduled_timestamp"],
+                condition=Q(
+                    delivered=False,
+                ),
+            ),
+        ]
+
     def __str__(self) -> str:
         display_recipient = get_display_recipient(self.recipient)
         return f"{display_recipient} {self.subject} {self.sender!r} {self.scheduled_timestamp}"
@@ -4335,26 +4389,30 @@ class ScheduledMessage(models.Model):
     def set_topic_name(self, topic_name: str) -> None:
         self.subject = topic_name
 
-    def to_dict(self) -> Union[StreamScheduledMessageAPI, DirectScheduledMessageAPI]:
+    def is_stream_message(self) -> bool:
+        return self.recipient.type == Recipient.STREAM
+
+    def to_dict(self) -> Union[APIScheduledStreamMessageDict, APIScheduledDirectMessageDict]:
         recipient, recipient_type_str = get_recipient_ids(self.recipient, self.sender.id)
 
         if recipient_type_str == "private":
             # The topic for direct messages should always be an empty string.
             assert self.topic_name() == ""
 
-            return DirectScheduledMessageAPI(
+            return APIScheduledDirectMessageDict(
                 scheduled_message_id=self.id,
                 to=recipient,
                 type=recipient_type_str,
                 content=self.content,
                 rendered_content=self.rendered_content,
                 scheduled_delivery_timestamp=datetime_to_timestamp(self.scheduled_timestamp),
+                failed=self.failed,
             )
 
         # The recipient for stream messages should always just be the unique stream ID.
         assert len(recipient) == 1
 
-        return StreamScheduledMessageAPI(
+        return APIScheduledStreamMessageDict(
             scheduled_message_id=self.id,
             to=recipient[0],
             type=recipient_type_str,
@@ -4362,6 +4420,7 @@ class ScheduledMessage(models.Model):
             rendered_content=self.rendered_content,
             topic=self.topic_name(),
             scheduled_delivery_timestamp=datetime_to_timestamp(self.scheduled_timestamp),
+            failed=self.failed,
         )
 
 

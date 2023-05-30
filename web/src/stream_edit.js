@@ -86,7 +86,7 @@ function get_sub_for_target(target) {
 
     const sub = sub_store.get(stream_id);
     if (!sub) {
-        blueslip.error("get_sub_for_target() failed id lookup: " + stream_id);
+        blueslip.error("get_sub_for_target() failed id lookup", {stream_id});
         return undefined;
     }
     return sub;
@@ -143,7 +143,7 @@ function show_subscription_settings(sub) {
     }
 
     if (!stream_data.can_toggle_subscription(sub)) {
-        stream_ui_updates.initialize_cant_subscribe_popover(sub);
+        stream_ui_updates.initialize_cant_subscribe_popover();
     }
 
     const $subscriber_container = $edit_container.find(".edit_subscribers_for_stream");

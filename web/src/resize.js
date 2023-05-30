@@ -3,6 +3,7 @@ import $ from "jquery";
 
 import * as blueslip from "./blueslip";
 import * as compose_state from "./compose_state";
+import * as compose_ui from "./compose_ui";
 import * as condense from "./condense";
 import * as message_lists from "./message_lists";
 import * as message_viewport from "./message_viewport";
@@ -14,16 +15,13 @@ import * as util from "./util";
 function get_new_heights() {
     const res = {};
     const viewport_height = message_viewport.height();
-    const top_navbar_height = $("#top_navbar").safeOuterHeight(true);
     const right_sidebar_shortcuts_height = $(".right-sidebar-shortcuts").safeOuterHeight(true) || 0;
 
     res.bottom_whitespace_height = viewport_height * 0.4;
 
-    res.main_div_min_height = viewport_height - top_navbar_height;
-
     res.stream_filters_max_height =
         viewport_height -
-        Number.parseInt($("#left-sidebar").css("marginTop"), 10) -
+        Number.parseInt($("#left-sidebar").css("paddingTop"), 10) -
         Number.parseInt($(".narrows_panel").css("marginTop"), 10) -
         Number.parseInt($(".narrows_panel").css("marginBottom"), 10) -
         $("#global_filters").safeOuterHeight(true) -
@@ -36,7 +34,7 @@ function get_new_heights() {
 
     const usable_height =
         viewport_height -
-        Number.parseInt($("#right-sidebar").css("marginTop"), 10) -
+        Number.parseInt($("#right-sidebar").css("paddingTop"), 10) -
         $("#userlist-header").safeOuterHeight(true) -
         $("#user_search_section").safeOuterHeight(true) -
         right_sidebar_shortcuts_height;
@@ -50,7 +48,7 @@ export function watch_manual_resize(element) {
     const box = document.querySelector(element);
 
     if (!box) {
-        blueslip.error("Bad selector in watch_manual_resize: " + element);
+        blueslip.error("Bad selector in watch_manual_resize", {element});
         return undefined;
     }
 
@@ -169,6 +167,7 @@ export function handler() {
         condense.clear_message_content_height_cache();
     }
     resize_page_components();
+    compose_ui.autosize_textarea($("#compose-textarea"));
 
     // Re-compute and display/remove [More] links to messages
     condense.condense_and_collapse($(".message_table .message_row"));

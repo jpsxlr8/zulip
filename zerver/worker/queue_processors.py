@@ -161,8 +161,8 @@ def register_worker(
         test_queues.add(queue_name)
 
 
-def get_worker(queue_name: str) -> "QueueProcessingWorker":
-    return worker_classes[queue_name]()
+def get_worker(queue_name: str, threaded: bool = False) -> "QueueProcessingWorker":
+    return worker_classes[queue_name](threaded=threaded)
 
 
 def get_active_worker_queues(only_test_queues: bool = False) -> List[str]:
@@ -213,9 +213,6 @@ def retry_send_email_failures(
 class QueueProcessingWorker(ABC):
     queue_name: str
     MAX_CONSUME_SECONDS: Optional[int] = 30
-    # The MAX_CONSUME_SECONDS timeout is only enabled when handling a
-    # single queue at once, with no threads.
-    ENABLE_TIMEOUTS = False
     CONSUME_ITERATIONS_BEFORE_UPDATE_STATS_NUM = 50
     MAX_SECONDS_BEFORE_UPDATE_STATS = 30
 
@@ -225,8 +222,9 @@ class QueueProcessingWorker(ABC):
     # startup and steady-state memory.
     PREFETCH = 100
 
-    def __init__(self) -> None:
+    def __init__(self, threaded: bool = False) -> None:
         self.q: Optional[SimpleQueueClient] = None
+        self.threaded = threaded
         if not hasattr(self, "queue_name"):
             raise WorkerDeclarationError("Queue worker declared without queue_name")
 
@@ -304,7 +302,7 @@ class QueueProcessingWorker(ABC):
                 self.update_statistics()
 
             time_start = time.time()
-            if self.MAX_CONSUME_SECONDS and self.ENABLE_TIMEOUTS:
+            if self.MAX_CONSUME_SECONDS and not self.threaded:
                 try:
                     signal.signal(
                         signal.SIGALRM,
@@ -765,8 +763,8 @@ class MissedMessageWorker(QueueProcessingWorker):
 
 @assign_queue("email_senders")
 class EmailSendingWorker(LoopQueueProcessingWorker):
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, threaded: bool = False) -> None:
+        super().__init__(threaded)
         self.connection: BaseEmailBackend = initialize_connection(None)
 
     @retry_send_email_failures
@@ -1065,6 +1063,24 @@ class DeferredWorker(QueueProcessingWorker):
             output_dir = tempfile.mkdtemp(prefix="zulip-export-")
             export_event = RealmAuditLog.objects.get(id=event["id"])
             user_profile = get_user_profile_by_id(event["user_profile_id"])
+            extra_data = {}
+            if export_event.extra_data is not None:
+                extra_data = orjson.loads(export_event.extra_data)
+            if extra_data.get("started_timestamp") is not None:
+                logger.error(
+                    "Marking export for realm %s as failed due to retry -- possible OOM during export?",
+                    realm.string_id,
+                )
+                extra_data["failed_timestamp"] = timezone_now().timestamp()
+                export_event.extra_data = orjson.dumps(extra_data).decode()
+                export_event.save(update_fields=["extra_data"])
+                notify_realm_export(user_profile)
+                return
+
+            extra_data["started_timestamp"] = timezone_now().timestamp()
+            export_event.extra_data = orjson.dumps(extra_data).decode()
+            export_event.save(update_fields=["extra_data"])
+
             logger.info(
                 "Starting realm export for realm %s into %s, initiated by user_profile_id %s",
                 realm.string_id,
@@ -1076,16 +1092,13 @@ class DeferredWorker(QueueProcessingWorker):
                 public_url = export_realm_wrapper(
                     realm=realm,
                     output_dir=output_dir,
-                    threads=6,
+                    threads=1 if self.threaded else 6,
                     upload=True,
                     public_only=True,
                 )
             except Exception:
-                export_event.extra_data = orjson.dumps(
-                    dict(
-                        failed_timestamp=timezone_now().timestamp(),
-                    )
-                ).decode()
+                extra_data["failed_timestamp"] = timezone_now().timestamp()
+                export_event.extra_data = orjson.dumps(extra_data).decode()
                 export_event.save(update_fields=["extra_data"])
                 logging.exception(
                     "Data export for %s failed after %s",
@@ -1099,11 +1112,8 @@ class DeferredWorker(QueueProcessingWorker):
             assert public_url is not None
 
             # Update the extra_data field now that the export is complete.
-            export_event.extra_data = orjson.dumps(
-                dict(
-                    export_path=urllib.parse.urlparse(public_url).path,
-                )
-            ).decode()
+            extra_data["export_path"] = urllib.parse.urlparse(public_url).path
+            export_event.extra_data = orjson.dumps(extra_data).decode()
             export_event.save(update_fields=["extra_data"])
 
             # Send a private message notification letting the user who
@@ -1167,7 +1177,10 @@ class TestWorker(QueueProcessingWorker):
 class NoopWorker(QueueProcessingWorker):
     """Used to profile the queue processing framework, in zilencer's queue_rate."""
 
-    def __init__(self, max_consume: int = 1000, slow_queries: Sequence[int] = []) -> None:
+    def __init__(
+        self, threaded: bool = False, max_consume: int = 1000, slow_queries: Sequence[int] = []
+    ) -> None:
+        super().__init__(threaded)
         self.consumed = 0
         self.max_consume = max_consume
         self.slow_queries: Set[int] = set(slow_queries)
@@ -1188,7 +1201,10 @@ class BatchNoopWorker(LoopQueueProcessingWorker):
 
     batch_size = 100
 
-    def __init__(self, max_consume: int = 1000, slow_queries: Sequence[int] = []) -> None:
+    def __init__(
+        self, threaded: bool = False, max_consume: int = 1000, slow_queries: Sequence[int] = []
+    ) -> None:
+        super().__init__(threaded)
         self.consumed = 0
         self.max_consume = max_consume
         self.slow_queries: Set[int] = set(slow_queries)

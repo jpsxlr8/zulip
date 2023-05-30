@@ -89,7 +89,13 @@ export function get_selected_send_later_timestamp() {
 }
 
 export function get_formatted_selected_send_later_time() {
-    if (!selected_send_later_timestamp) {
+    const current_time = Date.now() / 1000; // seconds, like selected_send_later_timestamp
+    if (
+        scheduled_messages.is_send_later_timestamp_missing_or_expired(
+            selected_send_later_timestamp,
+            current_time,
+        )
+    ) {
         return undefined;
     }
     return timerender.get_full_datetime(new Date(selected_send_later_timestamp * 1000), "time");
@@ -124,16 +130,14 @@ function get_popover_items_for_instance(instance) {
     const class_name = $current_elem.attr("class");
 
     if (!$current_elem) {
-        blueslip.error(
-            `Trying to get menu items when popover with class "${class_name}" is closed.`,
-        );
+        blueslip.error("Trying to get menu items when popover is closed.", {class_name});
         return undefined;
     }
 
     return $current_elem.find("li:not(.divider):visible a");
 }
 
-const default_popover_props = {
+export const default_popover_props = {
     delay: 0,
     appendTo: () => document.body,
     trigger: "click",
@@ -184,7 +188,7 @@ function on_show_prep(instance) {
     popovers.hide_all_except_sidebars();
 }
 
-function tippy_no_propagation(target, popover_props) {
+export function register_popover_menu(target, popover_props) {
     // For some elements, such as the click target to open the message
     // actions menu, we want to avoid propagating the click event to
     // parent elements. Tippy's built-in `delegate` method does not
@@ -230,10 +234,91 @@ export function toggle_message_actions_menu(message) {
     return true;
 }
 
-export function do_schedule_message(send_at_time) {
-    if (overlays.is_modal_open()) {
-        overlays.close_modal("send_later_modal");
+function set_compose_box_schedule(element) {
+    const selected_send_at_time = element.dataset.sendStamp / 1000;
+    return selected_send_at_time;
+}
+
+export function open_send_later_menu(instance) {
+    if (!compose_validate.validate(true)) {
+        return;
     }
+
+    // Only show send later options that are possible today.
+    const date = new Date();
+    const filtered_send_opts = scheduled_messages.get_filtered_send_opts(date);
+    $("body").append(render_send_later_modal(filtered_send_opts));
+
+    overlays.open_modal("send_later_modal", {
+        autoremove: true,
+        on_show() {
+            instance._interval = setInterval(
+                scheduled_messages.update_send_later_options,
+                scheduled_messages.SCHEDULING_MODAL_UPDATE_INTERVAL_IN_MILLISECONDS,
+            );
+
+            const $send_later_modal = $("#send_later_modal");
+
+            // Upon the first keydown event, we focus on the first element in the list,
+            // enabling keyboard navigation that is handled by `hotkey.js` and `list_util.ts`.
+            $send_later_modal.one("keydown", () => {
+                const $options = $send_later_modal.find("a");
+                $options[0].focus();
+
+                $send_later_modal.on("keydown", (e) => {
+                    if (e.key === "Enter") {
+                        e.target.click();
+                    }
+                });
+            });
+
+            $send_later_modal.on("click", ".send_later_custom", (e) => {
+                const $send_later_modal_content = $send_later_modal.find(".modal__content");
+                const current_time = new Date();
+                flatpickr.show_flatpickr(
+                    $(".send_later_custom")[0],
+                    do_schedule_message,
+                    new Date(current_time.getTime() + 60 * 60 * 1000),
+                    {
+                        minDate: new Date(
+                            current_time.getTime() +
+                                scheduled_messages.MINIMUM_SCHEDULED_MESSAGE_DELAY_SECONDS * 1000,
+                        ),
+                        onClose() {
+                            // Return to normal state.
+                            $send_later_modal_content.css("pointer-events", "all");
+                        },
+                    },
+                );
+                // Disable interaction with rest of the options in the modal.
+                $send_later_modal_content.css("pointer-events", "none");
+                e.preventDefault();
+                e.stopPropagation();
+            });
+            $send_later_modal.one(
+                "click",
+                ".send_later_today, .send_later_tomorrow, .send_later_monday",
+                (e) => {
+                    const send_at_time = set_compose_box_schedule(e.currentTarget);
+                    do_schedule_message(send_at_time);
+                    e.preventDefault();
+                    e.stopPropagation();
+                },
+            );
+        },
+        on_shown() {
+            // When shown, we should give the modal focus to correctly handle keyboard events.
+            const $send_later_modal_overlay = $("#send_later_modal .modal__overlay");
+            $send_later_modal_overlay.trigger("focus");
+        },
+        on_hide() {
+            clearInterval(instance._interval);
+        },
+    });
+}
+
+export function do_schedule_message(send_at_time) {
+    overlays.close_modal_if_open("send_later_modal");
 
     if (!Number.isInteger(send_at_time)) {
         // Convert to timestamp if this is not a timestamp.
@@ -244,7 +329,7 @@ export function do_schedule_message(send_at_time) {
 }
 
 export function initialize() {
-    tippy_no_propagation("#streams_inline_icon", {
+    register_popover_menu("#streams_inline_icon", {
         onShow(instance) {
             popover_instances.stream_settings = instance;
             const can_create_streams =
@@ -338,7 +423,7 @@ export function initialize() {
     // Click event handlers for it are handled in `compose_ui` and
     // we don't want to close this popover on click inside it but
     // only if user clicked outside it.
-    tippy_no_propagation(".compose_control_menu_wrapper", {
+    register_popover_menu(".compose_control_menu_wrapper", {
         placement: "top",
         onShow(instance) {
             instance.setContent(
@@ -357,7 +442,7 @@ export function initialize() {
         },
     });
 
-    tippy_no_propagation("#stream_filters .topic-sidebar-menu-icon", {
+    register_popover_menu("#stream_filters .topic-sidebar-menu-icon", {
         ...left_sidebar_tippy_options,
         onShow(instance) {
             popover_instances.topics_menu = instance;
@@ -450,7 +535,7 @@ export function initialize() {
 
             $popper.one("click", ".sidebar-popover-toggle-resolved", () => {
                 message_edit.with_first_message_id(stream_id, topic_name, (message_id) => {
-                    message_edit.toggle_resolve_topic(message_id, topic_name);
+                    message_edit.toggle_resolve_topic(message_id, topic_name, true);
                 });
 
                 instance.hide();
@@ -479,7 +564,7 @@ export function initialize() {
         },
     });
 
-    tippy_no_propagation(".open_enter_sends_dialog", {
+    register_popover_menu(".open_enter_sends_dialog", {
         placement: "top",
         onShow(instance) {
             on_show_prep(instance);
@@ -522,10 +607,10 @@ export function initialize() {
         },
     });
 
-    tippy_no_propagation(".actions_hover .zulip-icon-ellipsis-v-solid", {
-        // The is our minimum supported width for mobile. We shouldn't
-        // make the popover wider than this.
-        maxWidth: "320px",
+    register_popover_menu(".actions_hover .zulip-icon-ellipsis-v-solid", {
+        // 320px is our minimum supported width for mobile. We will allow the value to flex
+        // to a max of 350px but we shouldn't make the popover wider than this.
+        maxWidth: "min(max(320px, 100vw), 350px)",
         placement: "bottom",
         popperOptions: {
             modifiers: [
@@ -701,7 +786,7 @@ export function initialize() {
     });
 
     // Starred messages popover
-    tippy_no_propagation(".starred-messages-sidebar-menu-icon", {
+    register_popover_menu(".starred-messages-sidebar-menu-icon", {
         ...left_sidebar_tippy_options,
         onMount(instance) {
             const $popper = $(instance.popper);
@@ -743,7 +828,7 @@ export function initialize() {
     });
 
     // Drafts popover
-    tippy_no_propagation(".drafts-sidebar-menu-icon", {
+    register_popover_menu(".drafts-sidebar-menu-icon", {
         ...left_sidebar_tippy_options,
         onMount(instance) {
             const $popper = $(instance.popper);
@@ -767,7 +852,7 @@ export function initialize() {
     });
 
     // All messages popover
-    tippy_no_propagation(".all-messages-sidebar-menu-icon", {
+    register_popover_menu(".all-messages-sidebar-menu-icon", {
         ...left_sidebar_tippy_options,
         onMount(instance) {
             const $popper = $(instance.popper);
@@ -788,11 +873,6 @@ export function initialize() {
             popover_instances.all_messages = undefined;
         },
     });
-
-    function set_compose_box_schedule(element) {
-        const selected_send_at_time = element.dataset.sendStamp / 1000;
-        return selected_send_at_time;
-    }
 
     delegate("body", {
         ...default_popover_props,
@@ -820,59 +900,7 @@ export function initialize() {
                 const send_at_timestamp = get_selected_send_later_timestamp();
                 do_schedule_message(send_at_timestamp);
             });
-            $popper.one("click", ".open_send_later_modal", () => {
-                if (!compose_validate.validate()) {
-                    return;
-                }
-
-                // Only show send later options that are possible today.
-                const date = new Date();
-                const filtered_send_opts = scheduled_messages.get_filtered_send_opts(date);
-                $("body").append(render_send_later_modal(filtered_send_opts));
-
-                overlays.open_modal("send_later_modal", {
-                    autoremove: true,
-                    on_show() {
-                        const $send_later_modal = $("#send_later_modal");
-                        $send_later_modal.on("keydown", (e) => {
-                            if (e.key === "Enter") {
-                                e.target.click();
-                            }
-                        });
-                        $send_later_modal.on("click", ".send_later_custom", (e) => {
-                            const $send_later_modal_content =
-                                $send_later_modal.find(".modal__content");
-                            const current_time = new Date();
-                            flatpickr.show_flatpickr(
-                                $(".send_later_custom")[0],
-                                do_schedule_message,
-                                new Date(current_time.getTime() + 60 * 60 * 1000),
-                                {
-                                    minDate: new Date(current_time.getTime() + 5 * 60 * 1000),
-                                    onClose() {
-                                        // Return to normal state.
-                                        $send_later_modal_content.css("pointer-events", "all");
-                                    },
-                                },
-                            );
-                            // Disable interaction with rest of the options in the modal.
-                            $send_later_modal_content.css("pointer-events", "none");
-                            e.preventDefault();
-                            e.stopPropagation();
-                        });
-                        $send_later_modal.one(
-                            "click",
-                            ".send_later_today, .send_later_tomorrow, .send_later_monday",
-                            (e) => {
-                                const send_at_time = set_compose_box_schedule(e.currentTarget);
-                                do_schedule_message(send_at_time);
-                                e.preventDefault();
-                                e.stopPropagation();
-                            },
-                        );
-                    },
-                });
-            });
+            $popper.one("click", ".open_send_later_modal", () => open_send_later_menu(instance));
         },
         onHidden(instance) {
             instance.destroy();

@@ -19,16 +19,6 @@ const compose_recipient = zrequire("compose_recipient");
 const sub_store = zrequire("sub_store");
 const stream_data = zrequire("stream_data");
 
-let stream_value = "";
-compose_recipient.compose_recipient_widget = {
-    value() {
-        return stream_value;
-    },
-    render(val) {
-        stream_value = val;
-    },
-};
-
 const aaron = {
     email: "aaron@zulip.com",
     user_id: 6,
@@ -74,6 +64,7 @@ user_settings.twenty_four_hour_time = false;
 
 const {localstorage} = zrequire("localstorage");
 const drafts = zrequire("drafts");
+const messages_overlay_ui = zrequire("messages_overlay_ui");
 const timerender = zrequire("timerender");
 
 const draft_1 = {
@@ -167,6 +158,7 @@ test("snapshot_message", ({override_rewire}) => {
     override_rewire(user_pill, "get_user_ids", () => [aaron.user_id]);
     override_rewire(compose_pm_pill, "set_from_emails", noop);
     override_rewire(compose_recipient, "on_compose_select_recipient_update", () => {});
+    compose_recipient.set_compose_recipient_id = () => {};
     mock_banners();
 
     stream_data.get_sub = (stream_name) => {
@@ -184,10 +176,21 @@ test("snapshot_message", ({override_rewire}) => {
     function set_compose_state() {
         compose_state.set_message_type(curr_draft.type);
         compose_state.message_content(curr_draft.content);
-        compose_state.set_stream_name(curr_draft.stream);
+        if (curr_draft.type === "private") {
+            compose_recipient.set_compose_recipient_id(compose_recipient.DIRECT_MESSAGE_ID);
+        } else {
+            compose_state.set_stream_name(curr_draft.stream);
+        }
         compose_state.topic(curr_draft.topic);
         compose_state.private_message_recipient(curr_draft.private_message_recipient);
     }
+
+    const stream = {
+        stream_id: draft_1.stream_id,
+        name: draft_1.stream,
+    };
+    stream_data.add_sub(stream);
+    compose_state.set_stream_name("stream");
 
     curr_draft = draft_1;
     set_compose_state();
@@ -432,10 +435,7 @@ test("catch_buggy_draft_error", () => {
     const draft_model = drafts.draft_model;
 
     // An error is logged but the draft isn't fixed in this codepath.
-    blueslip.expect(
-        "error",
-        "Cannot compare strings; at least one value is undefined: (undefined), old_topic",
-    );
+    blueslip.expect("error", "Cannot compare strings; at least one value is undefined");
     drafts.rename_stream_recipient(
         stream_B.stream_id,
         "old_topic",
@@ -538,7 +538,7 @@ test("format_drafts", ({override_rewire, mock_template}) => {
             is_stream: true,
             stream_name: "stream",
             stream_id: 30,
-            recipient_bar_color: "#e6e6e6",
+            recipient_bar_color: "#ebebeb",
             stream_privacy_icon_color: "#b9b9b9",
             topic: "topic",
             raw_content: "Test stream message",
@@ -571,7 +571,7 @@ test("format_drafts", ({override_rewire, mock_template}) => {
             draft_id: "id3",
             is_stream: true,
             stream_name: "stream 2",
-            recipient_bar_color: "#e6e6e6",
+            recipient_bar_color: "#ebebeb",
             stream_privacy_icon_color: "#b9b9b9",
             topic: "topic",
             raw_content: "Test stream message 2",
@@ -611,7 +611,7 @@ test("format_drafts", ({override_rewire, mock_template}) => {
         return "<draft table stub>";
     });
 
-    override_rewire(drafts, "set_initial_element", noop);
+    override_rewire(messages_overlay_ui, "set_initial_element", noop);
 
     $.create("#drafts_table .draft-row", {children: []});
     drafts.launch();
@@ -709,7 +709,7 @@ test("filter_drafts", ({override_rewire, mock_template}) => {
             is_stream: true,
             stream_name: "stream",
             stream_id: 30,
-            recipient_bar_color: "#e6e6e6",
+            recipient_bar_color: "#ebebeb",
             stream_privacy_icon_color: "#b9b9b9",
             topic: "topic",
             raw_content: "Test stream message",
@@ -722,7 +722,7 @@ test("filter_drafts", ({override_rewire, mock_template}) => {
             is_stream: true,
             stream_name: "stream 2",
             stream_id: undefined,
-            recipient_bar_color: "#e6e6e6",
+            recipient_bar_color: "#ebebeb",
             stream_privacy_icon_color: "#b9b9b9",
             topic: "topic",
             raw_content: "Test stream message 2",
@@ -763,7 +763,7 @@ test("filter_drafts", ({override_rewire, mock_template}) => {
         return "<draft table stub>";
     });
 
-    override_rewire(drafts, "set_initial_element", noop);
+    override_rewire(messages_overlay_ui, "set_initial_element", noop);
 
     override_rewire(user_pill, "get_user_ids", () => [aaron.user_id]);
     override_rewire(compose_pm_pill, "set_from_emails", noop);

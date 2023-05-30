@@ -65,9 +65,9 @@ function clear_box() {
 
     // TODO: Better encapsulate at-mention warnings.
     compose_validate.clear_topic_resolved_warning();
-    compose_validate.clear_wildcard_warnings();
+    compose_validate.clear_wildcard_warnings($("#compose_banners"));
     compose.clear_private_stream_alert();
-    compose_validate.set_user_acknowledged_wildcard_flag(undefined);
+    compose_validate.set_user_acknowledged_wildcard_flag(false);
 
     compose_state.set_recipient_edited_manually(false);
     compose.clear_preview_area();
@@ -128,7 +128,8 @@ export function maybe_scroll_up_selected_message() {
         return;
     }
 
-    const cover = $selected_row.offset().top + $selected_row.height() - $("#compose").offset().top;
+    const cover =
+        $selected_row.get_offset_to_window().bottom - $("#compose").get_offset_to_window().top;
     if (cover > 0) {
         message_viewport.user_initiated_animate_scroll(cover + 20);
     }
@@ -208,24 +209,25 @@ export function start(msg_type, opts) {
         clear_box();
     }
 
-    compose_recipient.compose_recipient_widget.render(opts.stream);
     const $stream_header_colorblock = $(
         "#compose_recipient_selection_dropdown .stream_header_colorblock",
     );
     stream_bar.decorate(opts.stream, $stream_header_colorblock);
 
-    // We set the stream/topic/private_message_recipient
-    // unconditionally here, which assumes the caller will have passed
-    // '' or undefined for these values if they are not appropriate
-    // for this message.
-    //
-    // TODO: Move these into a conditional on message_type, using an
-    // explicit "clear" function for compose_state.
-    compose_state.set_stream_name(opts.stream);
+    if (msg_type === "private") {
+        compose_state.set_compose_recipient_id(compose_recipient.DIRECT_MESSAGE_ID);
+    } else if (opts.stream) {
+        compose_state.set_stream_name(opts.stream);
+    } else {
+        // Open stream selection dropdown if no stream is selected.
+        compose_recipient.open_compose_recipient_dropdown();
+    }
     compose_state.topic(opts.topic);
 
     // Set the recipients with a space after each comma, so it looks nice.
-    compose_state.private_message_recipient(opts.private_message_recipient.replace(/,\s*/g, ", "));
+    compose_state.private_message_recipient(
+        opts.private_message_recipient.replaceAll(/,\s*/g, ", "),
+    );
 
     // If the user opens the compose box, types some text, and then clicks on a
     // different stream/topic, we want to keep the text in the compose box
@@ -245,9 +247,7 @@ export function start(msg_type, opts) {
     // Show a warning if topic is resolved
     compose_validate.warn_if_topic_resolved(true);
 
-    if (msg_type === "stream") {
-        compose_recipient.check_stream_posting_policy_for_compose_box(opts.stream);
-    }
+    compose_recipient.check_posting_policy_for_compose_box();
 
     // Reset the `max-height` property of `compose-textarea` so that the
     // compose-box do not cover the last messages of the current stream

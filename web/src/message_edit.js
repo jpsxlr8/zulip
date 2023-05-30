@@ -14,6 +14,7 @@ import * as compose from "./compose";
 import * as compose_actions from "./compose_actions";
 import * as compose_banner from "./compose_banner";
 import * as compose_ui from "./compose_ui";
+import * as compose_validate from "./compose_validate";
 import * as composebox_typeahead from "./composebox_typeahead";
 import * as condense from "./condense";
 import * as confirm_dialog from "./confirm_dialog";
@@ -521,6 +522,7 @@ function edit_message($row, raw_content) {
         // I believe this needs to be defined outside the countdown_timer, since
         // row just refers to something like the currently selected message, and
         // can change out from under us
+        const $message_edit_save_container = $row.find(".message_edit_save_container");
         const $message_edit_save = $row.find("button.message_edit_save");
         // Do this right away, rather than waiting for the timer to do its first update,
         // since otherwise there is a noticeable lag
@@ -529,12 +531,13 @@ function edit_message($row, raw_content) {
             seconds_left -= 1;
             if (seconds_left <= 0) {
                 clearInterval(countdown_timer);
-                $message_edit_content.prop("readonly", "readonly");
                 // We don't go directly to a "TOPIC_ONLY" type state (with an active Save button),
                 // since it isn't clear what to do with the half-finished edit. It's nice to keep
                 // the half-finished edit around so that they can copy-paste it, but we don't want
                 // people to think "Save" will save the half-finished edit.
-                $message_edit_save.addClass("disabled");
+                $message_edit_save.prop("disabled", true);
+                $message_edit_save_container.addClass("tippy-zulip-tooltip");
+                $message_edit_countdown_timer.addClass("expired");
                 $message_edit_countdown_timer.text($t({defaultMessage: "Time's up!"}));
             } else {
                 $message_edit_countdown_timer.text(timer_text(seconds_left));
@@ -563,8 +566,8 @@ function edit_message($row, raw_content) {
 
 function start_edit_maintaining_scroll($row, content) {
     edit_message($row, content);
-    const row_bottom = $row.height() + $row.offset().top;
-    const composebox_top = $("#compose").offset().top;
+    const row_bottom = $row.get_offset_to_window().bottom;
+    const composebox_top = $("#compose").get_offset_to_window().top;
     if (row_bottom > composebox_top) {
         message_viewport.scrollTop(message_viewport.scrollTop() + row_bottom - composebox_top);
     }
@@ -585,7 +588,11 @@ function start_edit_with_content($row, content, edit_box_open_callback) {
 export function start($row, edit_box_open_callback) {
     const message = message_lists.current.get(rows.id($row));
     if (message === undefined) {
-        blueslip.error("Couldn't find message ID for edit " + rows.id($row));
+        blueslip.error("Couldn't find message ID for edit", {row_id: rows.id($row)});
+        return;
+    }
+
+    if ($row.find(".message_edit_form form").length !== 0) {
         return;
     }
 
@@ -690,7 +697,7 @@ function handle_resolve_topic_failure_due_to_time_limit(topic_is_resolved) {
     });
 }
 
-export function toggle_resolve_topic(message_id, old_topic_name) {
+export function toggle_resolve_topic(message_id, old_topic_name, report_errors_in_global_banner) {
     let new_topic_name;
     const topic_is_resolved = resolved_topic.is_resolved(old_topic_name);
     if (topic_is_resolved) {
@@ -712,6 +719,12 @@ export function toggle_resolve_topic(message_id, old_topic_name) {
         error(xhr) {
             if (xhr.responseJSON.code === "MOVE_MESSAGES_TIME_LIMIT_EXCEEDED") {
                 handle_resolve_topic_failure_due_to_time_limit(topic_is_resolved);
+                return;
+            }
+
+            if (report_errors_in_global_banner) {
+                const error_msg = JSON.parse(xhr.responseText).msg;
+                ui_report.generic_embed_error(error_msg, 3500);
             }
         },
     });
@@ -883,6 +896,13 @@ export function save_inline_topic_edit($row) {
 }
 
 export function save_message_row_edit($row) {
+    const $banner_container = compose_banner.get_compose_banner_container(
+        $row.find(".message_edit_form textarea"),
+    );
+    const stream_id = Number.parseInt(
+        rows.get_message_recipient_header($row).attr("data-stream-id"),
+        10,
+    );
     const msg_list = message_lists.current;
     let message_id = rows.id($row);
     const message = message_lists.current.get(message_id);
@@ -892,14 +912,28 @@ export function save_message_row_edit($row) {
     let new_content;
     const old_content = message.raw_content;
 
-    show_message_edit_spinner($row);
-
     const $edit_content_input = $row.find(".message_edit_content");
     const can_edit_content = $edit_content_input.attr("readonly") !== "readonly";
     if (can_edit_content) {
         new_content = $edit_content_input.val();
         changed = old_content !== new_content;
     }
+
+    const already_has_wildcard_mention = message.wildcard_mentioned;
+    if (!already_has_wildcard_mention) {
+        const wildcard_mention = util.find_wildcard_mentions(new_content);
+        const is_stream_message_mentions_valid = compose_validate.validate_stream_message_mentions({
+            stream_id,
+            $banner_container,
+            wildcard_mention,
+        });
+
+        if (!is_stream_message_mentions_valid) {
+            return;
+        }
+    }
+
+    show_message_edit_spinner($row);
 
     // Editing a not-yet-acked message (because the original send attempt failed)
     // just results in the in-memory message being changed
@@ -1037,7 +1071,7 @@ export function edit_last_sent_message() {
     if (!$msg_row) {
         // This should never happen, since we got the message above
         // from message_lists.current.
-        blueslip.error("Could not find row for id " + msg.id);
+        blueslip.error("Could not find row for id", {msg_id: msg.id});
         return;
     }
 

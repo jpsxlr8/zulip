@@ -190,7 +190,7 @@ export class MessageList {
              properties of the message_list_data object.
            * The user recently marked messages in the view as unread, and
              we don't want to lose that state.
-           * The user has "Mark messages as read on scroll" option
+           * The user has "Automatically mark messages as read" option
              turned on in their user settings.
         */
         const filter = this.data.filter;
@@ -214,7 +214,7 @@ export class MessageList {
         /*
             Similar to can_mark_messages_read() above, this is a helper
             function to check if messages can be automatically read without
-            the "Do not mark messages as read on scroll" setting.
+            the "Automatically mark messages as read" setting.
         */
         return this.data.can_mark_messages_read() && !this.reading_prevented;
     }
@@ -443,8 +443,8 @@ export class MessageList {
         if (this.narrowed) {
             if (
                 this.visibly_empty() &&
-                this.data.has_found_oldest() &&
-                this.data.has_found_newest()
+                this.data.fetch_status.has_found_oldest() &&
+                this.data.fetch_status.has_found_newest()
             ) {
                 // Show the empty narrow message only if we're certain
                 // that the view doesn't have messages that we're

@@ -57,8 +57,10 @@ const overlays = mock_esm("../src/overlays", {
     streams_open: () => false,
     lightbox_open: () => false,
     drafts_open: () => false,
+    scheduled_messages_open: () => false,
     info_overlay_open: () => false,
     is_modal_open: () => false,
+    active_modal: () => undefined,
     is_overlay_or_modal_open: () => overlays.is_modal_open() || overlays.is_active(),
 });
 const popovers = mock_esm("../src/popovers", {
@@ -524,8 +526,8 @@ run_test("motion_keys", () => {
 
     delete overlays.is_active;
     overlays.drafts_open = () => true;
-    assert_mapping("up_arrow", drafts, "drafts_handle_events");
-    assert_mapping("down_arrow", drafts, "drafts_handle_events");
+    assert_mapping("up_arrow", drafts, "handle_keyboard_events");
+    assert_mapping("down_arrow", drafts, "handle_keyboard_events");
     delete overlays.is_active;
     delete overlays.drafts_open;
 });

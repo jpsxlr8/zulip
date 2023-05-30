@@ -22,7 +22,23 @@ Code-wise it's a singleton widget that controls the DOM inside
 
 */
 
-const meta = {
+type FeedbackWidgetMeta = {
+    hide_me_time: number | null;
+    alert_hover_state: boolean;
+    $container: JQuery | null;
+    opened: boolean;
+    handlers_set?: boolean;
+    undo?: () => void;
+};
+
+type FeedbackWidgetOptions = {
+    populate: (element: JQuery) => void;
+    title_text: string;
+    undo_button_text: string;
+    on_undo: () => void;
+};
+
+const meta: FeedbackWidgetMeta = {
     hide_me_time: null,
     alert_hover_state: false,
     $container: null,
@@ -35,12 +51,12 @@ const animate = {
             return;
         }
 
-        if (meta.hide_me_time < Date.now() && !meta.alert_hover_state) {
+        if ((meta.hide_me_time ?? 0) < Date.now() && !meta.alert_hover_state) {
             animate.fadeOut();
             return;
         }
 
-        setTimeout(animate.maybe_close, 100);
+        setTimeout(() => animate.maybe_close(), 100);
     },
     fadeOut() {
         if (!meta.opened) {
@@ -48,7 +64,16 @@ const animate = {
         }
 
         if (meta.$container) {
-            meta.$container.fadeOut(500).removeClass("show");
+            meta.$container.addClass("slide-out-feedback-container");
+            // Delay setting `display: none` enough that the hide animation starts.
+            setTimeout(
+                () =>
+                    meta.$container?.removeClass([
+                        "show-feedback-container",
+                        "slide-out-feedback-container",
+                    ]),
+                50,
+            );
             meta.opened = false;
             meta.alert_hover_state = false;
         }
@@ -59,15 +84,20 @@ const animate = {
         }
 
         if (meta.$container) {
-            meta.$container.fadeIn(500).addClass("show");
+            meta.$container.addClass("show-feedback-container");
             meta.opened = true;
-            setTimeout(animate.maybe_close, 100);
+            setTimeout(() => animate.maybe_close(), 100);
         }
     },
 };
 
-function set_up_handlers() {
+function set_up_handlers(): void {
     if (meta.handlers_set) {
+        return;
+    }
+
+    if (!meta.$container) {
+        blueslip.error("$container not found for feedback widget.");
         return;
     }
 
@@ -91,7 +121,7 @@ function set_up_handlers() {
         meta.alert_hover_state = false;
         // add at least 2000ms but if more than that exists just keep the
         // current amount.
-        meta.hide_me_time = Math.max(meta.hide_me_time, Date.now() + 2000);
+        meta.hide_me_time = Math.max(meta.hide_me_time ?? 0, Date.now() + 2000);
     });
 
     meta.$container.on("click", ".exit-me", () => {
@@ -106,15 +136,15 @@ function set_up_handlers() {
     });
 }
 
-export function is_open() {
+export function is_open(): boolean {
     return meta.opened;
 }
 
-export function dismiss() {
+export function dismiss(): void {
     animate.fadeOut();
 }
 
-export function show(opts) {
+export function show(opts: FeedbackWidgetOptions): void {
     if (!opts.populate) {
         blueslip.error("programmer needs to supply populate callback.");
         return;
@@ -122,7 +152,7 @@ export function show(opts) {
 
     meta.$container = $("#feedback_container");
 
-    const html = render_feedback_container();
+    const html = render_feedback_container({});
     meta.$container.html(html);
 
     set_up_handlers();

@@ -4,8 +4,10 @@ import tippy, {delegate} from "tippy.js";
 
 import render_message_inline_image_tooltip from "../templates/message_inline_image_tooltip.hbs";
 import render_narrow_to_compose_recipients_tooltip from "../templates/narrow_to_compose_recipients_tooltip.hbs";
+import render_narrow_tooltip from "../templates/narrow_tooltip.hbs";
 import render_tooltip_templates from "../templates/tooltip_templates.hbs";
 
+import * as compose_recipient from "./compose_recipient";
 import * as compose_state from "./compose_state";
 import {$t} from "./i18n";
 import * as message_lists from "./message_lists";
@@ -185,13 +187,12 @@ export function initialize() {
         },
     });
 
-    delegate("body", {
-        target: ".tippy-narrow-tooltip",
+    message_list_tooltip(".tippy-narrow-tooltip", {
         delay: LONG_HOVER_DELAY,
-        appendTo: () => document.body,
         onCreate(instance) {
-            const content = instance.props.content + $("#narrow-hotkey-tooltip-template").html();
-            instance.setContent(parse_html(content));
+            instance.setContent(
+                parse_html(render_narrow_tooltip({content: instance.props.content})),
+            );
         },
     });
 
@@ -318,6 +319,10 @@ export function initialize() {
     delegate("body", {
         target: "#compose-send-button",
         delay: EXTRA_LONG_HOVER_DELAY,
+        // By default, tippyjs uses a trigger value of "mouseenter focus",
+        // but by specifying "mouseenter", this will prevent showing the
+        // Send tooltip when tabbing to the Send button.
+        trigger: "mouseenter",
         appendTo: () => document.body,
         onShow(instance) {
             if (user_settings.enter_sends) {
@@ -407,11 +412,13 @@ export function initialize() {
             "#stream-specific-notify-table .unmute_stream",
             "#add_streams_tooltip",
             "#filter_streams_tooltip",
+            ".error-icon-message-recipient .zulip-icon",
         ],
         appendTo: () => document.body,
     });
 
     message_list_tooltip([".recipient_bar_icon"], {
+        delay: LONG_HOVER_DELAY,
         onHidden(instance) {
             instance.destroy();
         },
@@ -641,8 +648,19 @@ export function initialize() {
 
     delegate("body", {
         target: [".disabled-compose-send-button-container"],
+        maxWidth: 350,
+        content: () => compose_recipient.get_posting_policy_error_message(),
+        appendTo: () => document.body,
+        onHidden(instance) {
+            instance.destroy();
+        },
+    });
+
+    delegate("body", {
+        target: ["#stream_creation_form .add_subscribers_disabled"],
         content: $t({
-            defaultMessage: "You do not have permission to post in this stream.",
+            defaultMessage:
+                "You do not have permission to add other users to streams in this organization.",
         }),
         appendTo: () => document.body,
         onHidden(instance) {

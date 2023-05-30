@@ -52,11 +52,12 @@
 
 /* Main geometry for this element is in zulip.css */
 #compose-content {
-    border-top: 1px solid hsl(0deg 0% 0% / 7%);
+    background-color: hsl(232deg 30% 92%);
     transition: background-color 200ms linear;
     padding: 4px 4px 8px;
-    border-left: 1px solid hsl(0deg 0% 93%);
-    border-right: 1px solid hsl(0deg 0% 93%);
+    border: 1px solid hsl(0deg 0% 0% / 10%);
+    border-radius: 9px 9px 0 0;
+    box-shadow: 0 0 0 hsl(236deg 11% 28%);
     height: 100%;
     display: flex;
     flex-flow: column;
@@ -94,6 +95,10 @@
     flex-flow: column;
 
     .stream-selection-header-colorblock {
+        box-shadow: none;
+        border: 1px solid hsl(0deg 0% 80%);
+        border-right: none;
+
         &.message_header_private_message {
             border-radius: 3px 0 0 3px;
             border-bottom: 0;
@@ -102,13 +107,8 @@
     }
 
     #compose-recipient {
-        padding: 0;
-        display: flex;
-        align-items: center;
-        flex: 1;
-
         &.compose-recipient-direct-selected {
-            #compose_recipient_selection_dropdown .dropdown-toggle {
+            #compose_select_recipient_widget {
                 border-radius: 4px !important;
             }
 
@@ -117,17 +117,27 @@
             }
         }
 
-        .fa-angle-right {
-            font-size: 0.9em;
-            -webkit-text-stroke: 0.05em;
-            position: relative;
-            margin: 0 5px;
+        .topic-marker-container {
+            /* Ensure the marker ( < ) stays centered vertically
+              with the dropdown, even when adjacent stacking pills
+              in, e.g., a group DM. */
+            display: flex;
+            align-items: center;
+            height: var(--compose-recipient-box-min-height);
+
+            .fa-angle-right {
+                font-size: 0.9em;
+                -webkit-text-stroke: 0.05em;
+                align-self: center;
+                margin: 0 5px;
+            }
         }
 
         & a.narrow_to_compose_recipients {
             background: transparent;
             font-size: 18px;
-            padding: 1px;
+            padding: 0 1px;
+            align-self: center;
             line-height: 20px;
             opacity: 0.7;
             border: 0;
@@ -217,29 +227,26 @@
     bottom: 0;
     left: 0;
     z-index: 4;
-    width: 100%;
-
-    background-color: hsl(0deg 0% 100%);
 }
 
 #compose-container {
     display: flex;
     flex-direction: column;
     width: 100%;
-    /* This should match the value for .app-main */
-    max-width: 1400px;
     margin: auto;
 }
 
 #compose_top {
     display: flex;
     justify-content: space-between;
+    align-items: flex-start;
     padding-bottom: 5px;
 }
 
 #compose_top_right {
     display: flex;
     align-items: center;
+    height: var(--compose-recipient-box-min-height);
 
     & button {
         background: transparent;
@@ -506,6 +513,7 @@ textarea.new_message_textarea,
     border: 1px solid hsl(0deg 0% 0% / 20%);
     box-shadow: none;
     transition: border 0.2s ease;
+    color: var(--color-text-default);
 
     &:focus {
         outline: 0;
@@ -516,15 +524,19 @@ textarea.new_message_textarea,
 
 input.recipient_box {
     margin: 0;
-    height: 1.1em;
+    padding: 0 6px;
+    height: auto;
     border-radius: 3px;
 }
 
-#compose_select_recipient_widget,
-#compose_select_recipient_widget .button {
-    margin: 0;
-    min-width: 0;
-    flex: 1;
+#compose_select_recipient_widget {
+    border-radius: 0 4px 4px 0;
+    width: auto;
+    outline: none;
+
+    &.dropdown-widget-button {
+        padding: 0 6px;
+    }
 }
 
 #stream_message_recipient_topic.recipient_box {
@@ -627,10 +639,20 @@ input.recipient_box {
 }
 
 #compose-recipient {
-    min-width: 0;
     display: flex;
-    align-items: center;
     width: 100%;
+    /* Use this containing flex element to
+      establish the minimum height of all its
+      children; the default `align-items: stretch`
+      (which is set on any flexbox without specifying
+      it) ensures that the child flex items will
+      always stretch to fit the height set here;
+      larger heights, such as on group-DM pills,
+      will allow this to grow as needed.
+      Child flex items like chevrons take
+      `align-self: center` to center only
+      themselves, where necessary. */
+    min-height: var(--compose-recipient-box-min-height);
 }
 
 .tippy-content .compose_control_buttons_container {
@@ -685,7 +707,7 @@ input.recipient_box {
     }
 
     .divider {
-        color: hsl(0deg 0% 88%);
+        color: hsl(0deg 0% 75%);
         font-size: 20px;
         margin: 0 3px;
     }
@@ -765,7 +787,7 @@ a.compose_control_button.hide {
 
     border: 1px solid hsl(0deg 0% 67%);
     border-radius: 4px;
-    background-color: hsl(0deg 0% 0% / 2%);
+    background-color: hsl(0deg 0% 98%);
     cursor: not-allowed;
 }
 
@@ -776,6 +798,7 @@ a.compose_control_button.hide {
 #compose_recipient_selection_dropdown {
     display: flex;
     justify-content: flex-start;
+    height: var(--compose-recipient-box-min-height);
 
     .stream_header_colorblock {
         margin: 0;
@@ -805,6 +828,15 @@ a.compose_control_button.hide {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+        color: var(--color-text-default);
+
+        .stream-privacy-type-icon {
+            font-size: 13px;
+            width: 13px;
+            height: 13px;
+            position: relative;
+            top: 2px;
+        }
     }
 
     .dropdown-list-body .list_item a {
@@ -822,14 +854,6 @@ a.compose_control_button.hide {
     .text-warning {
         color: inherit;
     }
-}
-
-#stream_message_recipient_topic {
-    min-width: 0;
-}
-
-#id_compose_select_recipient {
-    display: flex;
 }
 
 .dropdown-menu {

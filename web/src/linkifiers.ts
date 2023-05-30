@@ -76,7 +76,7 @@ function python_to_js_linkifier(
         // We'll ignore this linkifier for now, but log this
         // failure for debugging later.
         if (error instanceof SyntaxError) {
-            blueslip.error("python_to_js_linkifier: " + error.message);
+            blueslip.error("python_to_js_linkifier failure!", {pattern}, error);
         } else {
             // Don't swallow any other (unexpected) exceptions.
             /* istanbul ignore next */
@@ -84,7 +84,6 @@ function python_to_js_linkifier(
         }
     }
     const url_template = url_template_lib.parse(url);
-    blueslip.info(`Linkifier info ${String(final_regex)} ${url}`, group_number_to_name);
     return [final_regex, url_template, group_number_to_name];
 }
 

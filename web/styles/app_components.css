@@ -698,6 +698,7 @@ div.overlay {
     border-collapse: separate;
 
     & thead th {
+        min-width: 100px;
         color: inherit;
         background-color: hsl(0deg 0% 100%);
         border-top: 1px solid hsl(0deg 0% 0% / 20%) !important;
@@ -708,7 +709,7 @@ div.overlay {
             content: " \f0d8";
             white-space: pre;
             display: inline-block;
-            position: relative;
+            position: absolute;
             padding-top: 3px;
             font: normal normal normal 12px/1 FontAwesome;
             font-size: inherit;
@@ -860,7 +861,7 @@ div.overlay {
 .overlay-messages-container {
     position: relative;
     height: 95%;
-    background-color: hsl(0deg 0% 100%);
+    background-color: var(--color-background-modal);
     border-radius: 4px;
     padding: 0;
     width: 58%;
@@ -937,8 +938,7 @@ div.overlay {
 
         &.active {
             outline: 2px solid hsl(215deg 47% 50%);
-            /* this offset ensures no gap between the blue box and the draft in active state */
-            outline-offset: -1px;
+            border-radius: 7px;
         }
 
         .message_row {
@@ -1007,5 +1007,21 @@ div.overlay {
             border: 0 !important;
             background: transparent;
         }
+    }
+}
+
+.dropdown-widget-button {
+    background-color: hsl(0deg 0% 100%);
+    padding: 4px 6px;
+    border: 1px solid hsl(0deg 0% 80%);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    outline: none;
+
+    .fa-chevron-down {
+        position: relative;
+        top: -1px;
     }
 }

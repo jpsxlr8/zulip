@@ -1,6 +1,8 @@
 import $ from "jquery";
 
+import render_compose_banner from "../templates/compose_banner/compose_banner.hbs";
 import render_success_message_scheduled_banner from "../templates/compose_banner/success_message_scheduled_banner.hbs";
+import render_send_later_modal_options from "../templates/send_later_modal_options.hbs";
 
 import * as channel from "./channel";
 import * as compose from "./compose";
@@ -12,8 +14,11 @@ import {$t} from "./i18n";
 import * as narrow from "./narrow";
 import * as people from "./people";
 import * as popover_menus from "./popover_menus";
-import * as stream_data from "./stream_data";
+import * as sub_store from "./sub_store";
 import * as timerender from "./timerender";
+
+export const MINIMUM_SCHEDULED_MESSAGE_DELAY_SECONDS = 5 * 60;
+export const SCHEDULING_MODAL_UPDATE_INTERVAL_IN_MILLISECONDS = 60 * 1000;
 
 export let scheduled_messages_data = [];
 
@@ -41,10 +46,31 @@ function compute_send_times(now = new Date()) {
     return send_times;
 }
 
+export function is_send_later_timestamp_missing_or_expired(
+    timestamp_in_seconds,
+    current_time_in_seconds,
+) {
+    if (!timestamp_in_seconds) {
+        return true;
+    }
+    // Determine if the selected timestamp is less than the minimum
+    // scheduled message delay
+    if (timestamp_in_seconds - current_time_in_seconds < MINIMUM_SCHEDULED_MESSAGE_DELAY_SECONDS) {
+        return true;
+    }
+    return false;
+}
+
 function sort_scheduled_messages_data() {
     scheduled_messages_data.sort(
         (msg1, msg2) => msg1.scheduled_delivery_timestamp - msg2.scheduled_delivery_timestamp,
     );
+}
+
+function hide_scheduled_message_success_compose_banner(scheduled_message_id) {
+    $(
+        `.message_scheduled_success_compose_banner[data-scheduled-message-id=${scheduled_message_id}]`,
+    ).hide();
 }
 
 export function add_scheduled_messages(scheduled_messages) {
@@ -58,6 +84,7 @@ export function remove_scheduled_message(scheduled_message_id) {
     );
     if (msg_index !== undefined) {
         scheduled_messages_data.splice(msg_index, 1);
+        hide_scheduled_message_success_compose_banner(scheduled_message_id);
     }
 }
 
@@ -95,7 +122,7 @@ export function open_scheduled_message_in_compose(scheduled_msg, should_narrow_t
     if (scheduled_msg.type === "stream") {
         compose_args = {
             type: "stream",
-            stream: stream_data.maybe_get_stream_name(scheduled_msg.to),
+            stream: sub_store.maybe_get_stream_name(scheduled_msg.to),
             topic: scheduled_msg.topic,
             content: scheduled_msg.content,
         };
@@ -156,13 +183,32 @@ export function send_request_to_schedule_message(scheduled_message_data, deliver
     });
 }
 
+function show_message_unscheduled_banner(scheduled_delivery_timestamp) {
+    const deliver_at = timerender.get_full_datetime(
+        new Date(scheduled_delivery_timestamp * 1000),
+        "time",
+    );
+    const unscheduled_banner = render_compose_banner({
+        banner_type: compose_banner.WARNING,
+        banner_text: $t(
+            {
+                defaultMessage: "This message is no longer scheduled for {deliver_at}.",
+            },
+            {deliver_at},
+        ),
+        classname: compose_banner.CLASSNAMES.unscheduled_message,
+    });
+    compose_banner.append_compose_banner_to_banner_list(unscheduled_banner, $("#compose_banners"));
+}
+
 export function edit_scheduled_message(scheduled_message_id, should_narrow_to_recipient = true) {
     const scheduled_msg = scheduled_messages_data.find(
         (msg) => msg.scheduled_message_id === scheduled_message_id,
     );
-    delete_scheduled_message(scheduled_message_id, () =>
-        open_scheduled_message_in_compose(scheduled_msg, should_narrow_to_recipient),
-    );
+    delete_scheduled_message(scheduled_message_id, () => {
+        open_scheduled_message_in_compose(scheduled_msg, should_narrow_to_recipient);
+        show_message_unscheduled_banner(scheduled_msg.scheduled_delivery_timestamp);
+    });
 }
 
 export function delete_scheduled_message(scheduled_msg_id, success = () => {}) {
@@ -180,7 +226,6 @@ export function get_filtered_send_opts(date) {
     const send_times = compute_send_times(date);
 
     const day = date.getDay(); // Starts with 0 for Sunday.
-    const hours = date.getHours();
 
     const send_later_today = {
         today_nine_am: {
@@ -257,9 +302,14 @@ export function get_filtered_send_opts(date) {
 
     let possible_send_later_today = {};
     let possible_send_later_monday = {};
-    if (hours <= 8) {
+
+    const minutes_into_day = date.getHours() * 60 + date.getMinutes();
+    // Show Today send options based on time of day
+    if (minutes_into_day < 9 * 60 - MINIMUM_SCHEDULED_MESSAGE_DELAY_SECONDS / 60) {
+        // Allow Today at 9:00am only up to minimum scheduled message delay
         possible_send_later_today = send_later_today;
-    } else if (hours <= 15) {
+    } else if (minutes_into_day < (12 + 4) * 60 - MINIMUM_SCHEDULED_MESSAGE_DELAY_SECONDS / 60) {
+        // Allow Today at 4:00pm only up to minimum scheduled message delay
         possible_send_later_today.today_four_pm = send_later_today.today_four_pm;
     } else {
         possible_send_later_today = false;
@@ -294,4 +344,28 @@ export function initialize(scheduled_messages_params) {
         e.preventDefault();
         e.stopPropagation();
     });
+}
+
+// This function is exported for unit testing purposes.
+export function should_update_send_later_options(date) {
+    const current_minute = date.getMinutes();
+    const current_hour = date.getHours();
+
+    if (current_hour === 0 && current_minute === 0) {
+        // We need to rerender the available options at midnight,
+        // since Monday could become in range.
+        return true;
+    }
+
+    // Rerender at MINIMUM_SCHEDULED_MESSAGE_DELAY_SECONDS before the
+    // hour, so we don't offer a 4:00PM send time at 3:59 PM.
+    return current_minute === 60 - MINIMUM_SCHEDULED_MESSAGE_DELAY_SECONDS / 60;
+}
+
+export function update_send_later_options() {
+    const now = new Date();
+    if (should_update_send_later_options(now)) {
+        const filtered_send_opts = get_filtered_send_opts(now);
+        $("#send_later_options").replaceWith(render_send_later_modal_options(filtered_send_opts));
+    }
 }

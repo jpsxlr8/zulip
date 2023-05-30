@@ -80,6 +80,7 @@ from zerver.actions.realm_settings import (
 from zerver.actions.scheduled_messages import (
     check_schedule_message,
     delete_scheduled_message,
+    edit_scheduled_message,
 )
 from zerver.actions.streams import (
     bulk_add_subscriptions,
@@ -621,8 +622,8 @@ class NormalActionsTest(BaseAction):
         )
 
         # Verify move topic to different stream.
-
-        # Send 2 messages in "test" topic.
+        self.subscribe(self.user_profile, "Verona")
+        self.subscribe(self.user_profile, "Denmark")
         self.send_stream_message(self.user_profile, "Verona")
         message_id = self.send_stream_message(self.user_profile, "Verona")
         message = Message.objects.get(id=message_id)
@@ -656,6 +657,48 @@ class NormalActionsTest(BaseAction):
             is_stream_message=True,
             has_content=False,
             has_topic=False,
+            has_new_stream_id=True,
+            is_embedded_update_only=False,
+        )
+
+        # Move both stream and topic, with update_message_flags
+        # excluded from event types.
+        self.send_stream_message(self.user_profile, "Verona")
+        message_id = self.send_stream_message(self.user_profile, "Verona")
+        message = Message.objects.get(id=message_id)
+        stream = get_stream("Denmark", self.user_profile.realm)
+        propagate_mode = "change_all"
+        prior_mention_user_ids = set()
+
+        events = self.verify_action(
+            lambda: do_update_message(
+                self.user_profile,
+                message,
+                stream,
+                "final_topic",
+                propagate_mode,
+                True,
+                True,
+                None,
+                None,
+                set(),
+                None,
+            ),
+            state_change_expected=True,
+            # Skip "update_message_flags" to exercise the code path
+            # where raw_unread_msgs does not exist in the state.
+            event_types=["message", "update_message"],
+            # There are 3 events generated for this action
+            # * update_message: For updating existing messages
+            # * 2 new message events: Breadcrumb messages in the new and old topics.
+            num_events=3,
+        )
+        check_update_message(
+            "events[0]",
+            events[0],
+            is_stream_message=True,
+            has_content=False,
+            has_topic=True,
             has_new_stream_id=True,
             is_embedded_update_only=False,
         )
@@ -2512,6 +2555,14 @@ class NormalActionsTest(BaseAction):
         result = fetch_initial_state_data(user_profile)
         self.assertEqual(result["max_message_id"], -1)
 
+    def test_do_delete_message_with_no_messages(self) -> None:
+        events = self.verify_action(
+            lambda: do_delete_messages(self.user_profile.realm, []),
+            num_events=0,
+            state_change_expected=False,
+        )
+        self.assertEqual(events, [])
+
     def test_add_attachment(self) -> None:
         self.login("hamlet")
         fp = StringIO("zulip!")
@@ -3242,7 +3293,6 @@ class ScheduledMessagesEventsTest(BaseAction):
             [self.get_stream_id("Verona")],
             "Test topic",
             "Stream message",
-            None,
             convert_to_UTC(dateparser("2023-04-19 18:24:56")),
             self.user_profile.realm,
         )
@@ -3257,7 +3307,6 @@ class ScheduledMessagesEventsTest(BaseAction):
             [self.get_stream_id("Verona")],
             "Test topic",
             "Stream message 1",
-            None,
             convert_to_UTC(dateparser("2023-04-19 17:24:56")),
             self.user_profile.realm,
         )
@@ -3270,7 +3319,6 @@ class ScheduledMessagesEventsTest(BaseAction):
             [self.get_stream_id("Verona")],
             "Test topic",
             "Stream message 2",
-            None,
             convert_to_UTC(dateparser("2023-04-19 18:24:56")),
             self.user_profile.realm,
         )
@@ -3285,7 +3333,6 @@ class ScheduledMessagesEventsTest(BaseAction):
             [self.example_user("hamlet").id],
             None,
             "Private message",
-            None,
             convert_to_UTC(dateparser("2023-04-19 18:24:56")),
             self.user_profile.realm,
         )
@@ -3299,18 +3346,17 @@ class ScheduledMessagesEventsTest(BaseAction):
             [self.get_stream_id("Verona")],
             "Test topic",
             "Stream message",
-            None,
             convert_to_UTC(dateparser("2023-04-19 18:24:56")),
             self.user_profile.realm,
         )
-        action = lambda: check_schedule_message(
+        action = lambda: edit_scheduled_message(
             self.user_profile,
             get_client("website"),
-            "stream",
-            [self.get_stream_id("Verona")],
+            scheduled_message_id,
+            None,
+            None,
             "Edited test topic",
             "Edited stream message",
-            scheduled_message_id,
             convert_to_UTC(dateparser("2023-04-20 18:24:56")),
             self.user_profile.realm,
         )
@@ -3324,7 +3370,6 @@ class ScheduledMessagesEventsTest(BaseAction):
             [self.get_stream_id("Verona")],
             "Test topic",
             "Stream message",
-            None,
             convert_to_UTC(dateparser("2023-04-19 18:24:56")),
             self.user_profile.realm,
         )

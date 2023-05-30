@@ -152,8 +152,6 @@ test_ui("send_message", ({override, override_rewire, mock_template}) => {
     mock_banners();
     MockDate.set(new Date(fake_now * 1000));
 
-    override(sent_messages, "start_tracking_message", () => {});
-
     // This is the common setup stuff for all of the four tests.
     let stub_state;
     function initialize_state_stub_dict() {
@@ -199,6 +197,7 @@ test_ui("send_message", ({override, override_rewire, mock_template}) => {
                 content: "[foobar](/user_uploads/123456)",
                 sender_id: new_user.user_id,
                 queue_id: undefined,
+                resend: false,
                 stream: "",
                 topic: "",
                 to: `[${alice.user_id}]`,
@@ -305,18 +304,7 @@ test_ui("enter_with_preview_open", ({override, override_rewire}) => {
     mock_banners();
     $("#compose-textarea").toggleClass = noop;
     mock_stream_header_colorblock();
-    compose_recipient.open_compose_stream_dropup = noop;
     override_rewire(compose_recipient, "on_compose_select_recipient_update", noop);
-    let stream_value = "";
-    compose_recipient.compose_recipient_widget = {
-        value() {
-            return stream_value;
-        },
-        render(val) {
-            stream_value = val;
-        },
-    };
-
     override_rewire(compose_banner, "clear_message_sent_banners", () => {});
     override(document, "to_$", () => $("document-stub"));
     let show_button_spinner_called = false;
@@ -749,11 +737,11 @@ test_ui("create_message_object", ({override, override_rewire}) => {
     assert.equal(message.topic, "lunch");
     assert.equal(message.content, "burrito");
 
-    blueslip.expect("error", "Trying to send message with bad stream name: BOGUS STREAM");
-
+    blueslip.expect("error", "Unable to select stream: BOGUS STREAM");
     compose_state.set_stream_name("BOGUS STREAM");
+    blueslip.expect("error", "Trying to send message with bad stream name.");
     message = compose.create_message_object();
-    assert.equal(message.to, "BOGUS STREAM");
+    assert.equal(message.to, "");
     assert.equal(message.topic, "lunch");
     assert.equal(message.content, "burrito");
 

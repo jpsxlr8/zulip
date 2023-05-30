@@ -14,9 +14,9 @@ log][commit-log] for an up-to-date list of all changes.
 #### Highlights
 
 - Many significant visual changes as part of Zulip's ongoing redesign
-  project, including message feed headers, mention colors, dates and
-  times, compose box banners, icons, and tooltips. Many further
-  improvements are planned for future releases.
+  project, including message feed headers, background color, mention
+  colors, dates and times, compose box banners, icons, and
+  tooltips. Many further improvements are planned for future releases.
 - Added support for unmuting a topic in a muted stream, previously the
   4th most upvoted GitHub issue.
 - Redesigned the permissions settings for message editing, topic
@@ -37,12 +37,15 @@ log][commit-log] for an up-to-date list of all changes.
   email address should be shared with other users in the organization;
   previously this was solely controlled by organization
   administrators. This is presented to the user during account
-  creation.
+  creation, including for users imported from other chat products.
+- Added support for the upcoming Debian 12 release.
 
 #### Full feature changelog
 
 - Added full support for using JWT authentication to integrate Zulip
   with another application.
+- Added support for SAML Single-Logout initiated by the Zulip server
+  (SP-initiated Single Logout).
 - Added new stream setting controlling which users can remove other
   subscribers from the stream.
 - Added new setting to control when messages are marked as read when
@@ -52,8 +55,7 @@ log][commit-log] for an up-to-date list of all changes.
 - Added additional confirmation dialogs for actions deserving caution,
   including marking all messages as read, removing the last user from a
   private stream, and disabling all notifications for direct messages.
-- Added support for deployment hooks to be run whenever the Zulip
-  server is upgraded.
+- Added support for Postgres 15, and removed support for Postgres 11.
 - Added new `z` keyboard shortcut to view a message in context.
 - Added new `=` keyboard shortcut to upvote an existing emoji reaction.
 - Changed the `s` keyboard shortcut to be a toggle, replacing the
@@ -64,6 +66,8 @@ log][commit-log] for an up-to-date list of all changes.
 - Improved left sidebar to show more topics within the current stream,
   and more private message converations, especially when many are
   unread.
+- Reworked the internals of the main message feed scrollbar, fixing
+  several longstanding bugs.
 - Improved many interaction details in the settings subsystem,
   including how files are uploaded, hover behaviors, etc.
 - Improved the logged out experience to suggest logging in to see more
@@ -100,12 +104,17 @@ log][commit-log] for an up-to-date list of all changes.
 - Fixed a subtle compose box issue that could cause a message to be
   sent twice.
 - Fixed several subtle bugs involving messages that failed to send.
+- Fixed several subtle bugs in message feed loading and rendering.
+- Fixed several subtle live-update bugs involving moving messages.
+- Fixed several error handling bugs in the message edit UI.
 - Fixed an issue where newly created users could get email
   notifications for messages from Welcome Bot.
 - Fixed an issue the management command to garbage-collect uploaded
   files that are no longer used in a message was not running in cron.
 - Fixed noticeable lag when marking messages as unread in the web app.
 - Fixed a bug that could cause duplicate mobile push notifications.
+- Fixed several error handling issues with the data export process.
+- Fixed several subtle issues affecting certain container runtimes.
 - Added support for configurable hooks to be run when upgrading the
   Zulip server.
 - Added support for using TLS to secure the RabbitMQ connection.
@@ -150,8 +159,65 @@ log][commit-log] for an up-to-date list of all changes.
 - PostgreSQL 11 is no longer supported; if you are currently using it, you will
   need to [upgrade PostgreSQL](../production/upgrade.md#upgrading-postgresql)
   before upgrading Zulip.
+- Installations that deploy Zulip behind a [reverse
+  proxy][reverse-proxy-docs] should make sure the proxy is configured
+  to set the `X-Forwarded-Proto` HTTP header; the documentation has
+  updated example configuration.
+- Zulip's Twitter preview integration has been disabled due to Twitter
+  desupporting the API that it relied on.
+
+[reverse-proxy-docs]: ../production/deployment.md#putting-the-zulip-application-behind-a-reverse-proxy
 
 ## Zulip 6.x series
+
+### 6.2 -- 2023-05-19
+
+- CVE-2023-28623: Fixed a vulnerability that would allow users to sign up for a
+  Zulip Server account with an unauthorized email address, despite the server
+  being configured to require that email addresses be in LDAP. Specifically, if
+  the organization permissions don't require invitations to join, and the only
+  configured authentication backends were `ZulipLDAPAuthBackend` and some other
+  external authentication backend (any aside from `ZulipLDAPAuthBackend` and
+  `EmailAuthBackend`), then an unprivileged remote attacker could have created a
+  new account in the organization with an arbitrary email address in their
+  control that was not in the organization's LDAP directory.
+- CVE-2023-32677: Fixed a vulnerability which allowed users to invite new users
+  to streams when inviting them to the server, even if they did not have
+  [permission to invite existing users to streams](https://zulip.com/help/configure-who-can-invite-to-streams).
+  This did not allow users to invite others to streams that they themselves were
+  not a member of, and only affected deployments with the rare configuration of
+  a permissive
+  [realm invitation policy](https://zulip.com/help/restrict-account-creation#change-who-can-send-invitations)
+  and a strict
+  [stream invitation policy](https://zulip.com/help/configure-who-can-invite-to-streams).
+- Fixed a bug that could cause duplicate push notifications when using the
+  mobile push notifications service.
+- Fixed several bugs in the Zulip server and PostgreSQL version upgrade
+  processes.
+- Fixed multiple Recent conversations display bugs for private message
+  conversations.
+- Fixed the left sidebar stream list exiting “more topics” during background
+  re-rendering, and a related rendering bug.
+- Fixed a bug where uploaded files sent via the email gateway were not correctly
+  associated with the message’s sender.
+- Improved error handling for certain puppet failures.
+- Silenced a distracting `caniuse browserlist` warning in install/upgrade
+  output.
+- Simplified UI for inviting new users to make it easy to select the default
+  streams.
+- Fixed GPG check error handling for PGroonga apt repository.
+- Documented how to manage email address changes when using the LDAP backend.
+- Documented how to use SMTP without authentication.
+- Documented that the Zulip mobile/desktop apps now only support Zulip Server
+  4.0 and newer (released 22 months ago), following our 18-month support policy.
+- Extracted the documentation on modifying Zulip to a dedicated page.
+- Added a new `send_welcome_bot_message` management command, to allow the
+  sysadmin to send Welcome Bot messages manually after a data import.
+- Added new `RABBITMQ_USE_TLS` and `RABBITMQ_PORT` settings for installations
+  wanting to configure the RabbitMQ connection with a remote RabbitMQ host.
+- Added a new `timesync` deployment option to allow installations to override
+  Zulip’s default of `chrony` for time synchronization.
+- Upgraded dependencies for security and bug fixes.
 
 ### 6.1 -- 2023-01-23
 

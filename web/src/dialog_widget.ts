@@ -43,7 +43,7 @@ import * as ui_report from "./ui_report";
  *          to DOM, it can do so by passing a post_render hook.
  */
 
-type WidgetConfig = {
+export type DialogWidgetConfig = {
     html_heading: string;
     html_body: string;
     on_click: (e: unknown) => void;
@@ -97,7 +97,7 @@ export function close_modal(on_hidden_callback?: () => void): void {
     overlays.close_modal("dialog_widget_modal", {on_hidden: on_hidden_callback});
 }
 
-export function launch(conf: WidgetConfig): void {
+export function launch(conf: DialogWidgetConfig): void {
     // Mandatory fields:
     // * html_heading
     // * html_body
@@ -147,7 +147,14 @@ export function launch(conf: WidgetConfig): void {
         const current_values: Record<string, unknown> = {};
         $inputs.each(function () {
             const property_name = $(this).attr("name")!;
-            current_values[property_name] = $(this).val();
+            if (property_name) {
+                if ($(this).is("input[type='file']") && $(this).prop("files")?.length) {
+                    // If the input is a file input and a file has been selected, set value to file object
+                    current_values[property_name] = $(this).prop("files")[0];
+                } else {
+                    current_values[property_name] = $(this).val();
+                }
+            }
         });
         return current_values;
     }

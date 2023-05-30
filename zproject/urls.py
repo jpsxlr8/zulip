@@ -29,7 +29,7 @@ from zerver.views.auth import (
     jwt_fetch_api_key,
     log_into_subdomain,
     login_page,
-    logout_then_login,
+    logout_view,
     password_reset,
     remote_user_jwt,
     remote_user_sso,
@@ -132,14 +132,12 @@ from zerver.views.registration import (
 )
 from zerver.views.report import (
     report_csp_violations,
-    report_narrow_times,
-    report_send_times,
-    report_unnarrow_times,
 )
 from zerver.views.scheduled_messages import (
+    create_scheduled_message_backend,
     delete_scheduled_messages,
     fetch_scheduled_messages,
-    scheduled_messages_backend,
+    update_scheduled_message_backend,
 )
 from zerver.views.sentry import sentry_tunnel
 from zerver.views.storage import get_storage, remove_storage, update_storage
@@ -327,8 +325,14 @@ v1_api_and_json_patterns = [
     rest_path("drafts", GET=fetch_drafts, POST=create_drafts),
     rest_path("drafts/<int:draft_id>", PATCH=edit_draft, DELETE=delete_draft),
     # New scheduled messages are created via send_message_backend.
-    rest_path("scheduled_messages", GET=fetch_scheduled_messages, POST=scheduled_messages_backend),
-    rest_path("scheduled_messages/<int:scheduled_message_id>", DELETE=delete_scheduled_messages),
+    rest_path(
+        "scheduled_messages", GET=fetch_scheduled_messages, POST=create_scheduled_message_backend
+    ),
+    rest_path(
+        "scheduled_messages/<int:scheduled_message_id>",
+        DELETE=delete_scheduled_messages,
+        PATCH=update_scheduled_message_backend,
+    ),
     # messages -> zerver.views.message*
     # GET returns messages, possibly filtered, POST sends a message
     rest_path(
@@ -493,20 +497,6 @@ v1_api_and_json_patterns = [
     rest_path("register", POST=(events_register_backend, {"allow_anonymous_user_web"})),
     # events -> zerver.tornado.views
     rest_path("events", GET=get_events, DELETE=cleanup_event_queue),
-    # report -> zerver.views.report
-    #
-    # These endpoints are for internal error/performance reporting
-    # from the browser to the web app, and we don't expect to ever
-    # include in our API documentation.
-    rest_path("report/send_times", POST=(report_send_times, {"intentionally_undocumented"})),
-    rest_path(
-        "report/narrow_times",
-        POST=(report_narrow_times, {"allow_anonymous_user_web", "intentionally_undocumented"}),
-    ),
-    rest_path(
-        "report/unnarrow_times",
-        POST=(report_unnarrow_times, {"allow_anonymous_user_web", "intentionally_undocumented"}),
-    ),
     # Used to generate a Zoom video call URL
     rest_path("calls/zoom/create", POST=make_zoom_video_call),
     # Used to generate a BigBlueButton video call URL
@@ -550,7 +540,7 @@ i18n_urls = [
     # return `/accounts/login/`.
     path("accounts/login/", login_page, {"template_name": "zerver/login.html"}, name="login_page"),
     path("accounts/login/", LoginView.as_view(template_name="zerver/login.html"), name="login"),
-    path("accounts/logout/", logout_then_login),
+    path("accounts/logout/", logout_view),
     path("accounts/webathena_kerberos_login/", webathena_kerberos_login),
     path("accounts/password/reset/", password_reset, name="password_reset"),
     path(

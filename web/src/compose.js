@@ -153,17 +153,16 @@ export function create_message_object() {
     } else {
         const stream_name = compose_state.stream_name();
         message.stream = stream_name;
-        const sub = stream_data.get_sub(stream_name);
-        if (sub) {
-            message.stream_id = sub.stream_id;
-            message.to = sub.stream_id;
+        if (stream_name) {
+            message.stream_id = compose_recipient.selected_recipient_id;
+            message.to = compose_recipient.selected_recipient_id;
         } else {
             // We should be validating streams in calling code.  We'll
             // try to fall back to stream_name here just in case the
             // user started composing to the old stream name and
             // manually entered the stream name, and it got past
             // validation. We should try to kill this code off eventually.
-            blueslip.error("Trying to send message with bad stream name: " + stream_name);
+            blueslip.error("Trying to send message with bad stream name.");
             message.to = stream_name;
         }
         message.topic = topic;
@@ -230,13 +229,8 @@ export function send_message(request = create_message_object()) {
     }
 
     request.local_id = local_id;
-
-    sent_messages.start_tracking_message({
-        local_id,
-        locally_echoed,
-    });
-
     request.locally_echoed = locally_echoed;
+    request.resend = false;
 
     function success(data) {
         send_message_success(local_id, data.id, locally_echoed);
@@ -298,7 +292,7 @@ export function enter_with_preview_open(ctrl_pressed = false) {
 // Common entrypoint for asking the server to send the message
 // currently drafted in the compose box, including for scheduled
 // messages.
-export function finish(from_do_schedule_message = false) {
+export function finish(scheduling_message = false) {
     if (compose_ui.compose_spinner_visible) {
         // Avoid sending a message twice in parallel in races where
         // the user clicks the `Send` button very quickly twice or
@@ -324,13 +318,13 @@ export function finish(from_do_schedule_message = false) {
 
     compose_ui.show_compose_spinner();
 
-    if (!compose_validate.validate()) {
+    if (!compose_validate.validate(scheduling_message)) {
         // If the message failed validation, hide compose spinner.
         compose_ui.hide_compose_spinner();
         return false;
     }
 
-    if (from_do_schedule_message) {
+    if (scheduling_message) {
         schedule_message_to_custom_date();
     } else {
         send_message();
@@ -466,14 +460,36 @@ export function initialize() {
 
     upload.feature_check($("#compose .compose_upload_file"));
 
+    function get_input_info(event) {
+        const $edit_banners_container = $(event.target).closest(".edit_form_banners");
+        const is_edit_input = Boolean($edit_banners_container.length);
+        const $banner_container = $edit_banners_container.length
+            ? $edit_banners_container
+            : $("#compose_banners");
+        return {is_edit_input, $banner_container};
+    }
+
     $("body").on(
         "click",
         `.${CSS.escape(compose_banner.CLASSNAMES.wildcard_warning)} .compose_banner_action_button`,
         (event) => {
             event.preventDefault();
-            compose_validate.clear_wildcard_warnings();
+            const {$banner_container, is_edit_input} = get_input_info(event);
+            const $row = $(event.target).closest(".message_row");
+            compose_validate.clear_wildcard_warnings($banner_container);
             compose_validate.set_user_acknowledged_wildcard_flag(true);
-            finish();
+            if (is_edit_input) {
+                message_edit.save_message_row_edit($row);
+            } else if (event.target.dataset.validationTrigger === "schedule") {
+                popover_menus.open_send_later_menu();
+
+                // We need to set this flag to true here because `open_send_later_menu` validates the message and sets
+                // the user acknowledged wildcard flag back to 'false' and we don't want that to happen because then it
+                // would again show the wildcard warning banner when we actually send the message from 'send-later' modal.
+                compose_validate.set_user_acknowledged_wildcard_flag(true);
+            } else {
+                finish();
+            }
         },
     );
 
@@ -507,7 +523,7 @@ export function initialize() {
             const topic_name = $target.attr("data-topic-name");
 
             message_edit.with_first_message_id(stream_id, topic_name, (message_id) => {
-                message_edit.toggle_resolve_topic(message_id, topic_name);
+                message_edit.toggle_resolve_topic(message_id, topic_name, true);
                 compose_validate.clear_topic_resolved_warning(true);
             });
         },
@@ -542,9 +558,7 @@ export function initialize() {
         )} .compose_banner_action_button`,
         (event) => {
             event.preventDefault();
-            const $edit_form = $(event.target)
-                .closest(".message_edit_form")
-                .find(".edit_form_banners");
+            const {$banner_container} = get_input_info(event);
             const $invite_row = $(event.target).parents(".compose_banner");
 
             const user_id = Number.parseInt($invite_row.data("user-id"), 10);
@@ -559,7 +573,7 @@ export function initialize() {
                 compose_banner.show_error_message(
                     error_msg,
                     compose_banner.CLASSNAMES.generic_compose_error,
-                    $edit_form.length ? $edit_form : $("#compose_banners"),
+                    $banner_container,
                     $("#compose-textarea"),
                 );
                 $(event.target).prop("disabled", true);

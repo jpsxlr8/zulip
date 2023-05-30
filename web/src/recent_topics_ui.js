@@ -768,7 +768,7 @@ function recenter_focus_if_off_screen() {
     const table_wrapper_element = document.querySelector("#recent_topics_table .table_fix_head");
     const $topic_rows = $("#recent_topics_table table tbody tr");
 
-    if (row_focus > $topic_rows.length) {
+    if (row_focus >= $topic_rows.length) {
         // User used a filter which reduced
         // the number of visible rows.
         return;
@@ -777,7 +777,7 @@ function recenter_focus_if_off_screen() {
     const topic_offset = topic_offset_to_visible_area($topic_row);
     if (topic_offset === undefined) {
         // We don't need to return here since technically topic_offset is not visible.
-        blueslip.error(`Unable to get topic from row number ${row_focus}.`);
+        blueslip.error("Unable to get topic from row", {row_focus});
     }
 
     if (topic_offset !== "visible") {

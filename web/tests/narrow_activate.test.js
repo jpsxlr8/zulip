@@ -11,7 +11,6 @@ mock_esm("../src/resize", {
 });
 
 const all_messages_data = mock_esm("../src/all_messages_data");
-const channel = mock_esm("../src/channel");
 const compose_actions = mock_esm("../src/compose_actions");
 const compose_banner = mock_esm("../src/compose_banner");
 const compose_closed_ui = mock_esm("../src/compose_closed_ui");
@@ -26,6 +25,7 @@ const message_lists = mock_esm("../src/message_lists", {
     },
 });
 const message_scroll = mock_esm("../src/message_scroll");
+const message_feed_loading = mock_esm("../src/message_feed_loading");
 const message_view_header = mock_esm("../src/message_view_header");
 const notifications = mock_esm("../src/notifications");
 const search = mock_esm("../src/search");
@@ -72,7 +72,7 @@ const denmark = {
 stream_data.add_sub(denmark);
 
 function test_helper() {
-    let events = [];
+    const events = [];
 
     function stub(module, func_name) {
         module[func_name] = () => {
@@ -84,8 +84,8 @@ function test_helper() {
     stub(compose_actions, "on_narrow");
     stub(compose_closed_ui, "update_reply_recipient_label");
     stub(hashchange, "save_narrow");
-    stub(message_scroll, "hide_indicators");
-    stub(message_scroll, "show_loading_older");
+    stub(message_feed_loading, "hide_indicators");
+    stub(message_feed_loading, "show_loading_older");
     stub(message_scroll, "hide_top_of_narrow_notices");
     stub(notifications, "redraw_title");
     stub(search, "update_button_visibility");
@@ -101,12 +101,6 @@ function test_helper() {
     $("#mark_read_on_scroll_state_banner").toggleClass = () => {};
 
     return {
-        clear() {
-            events = [];
-        },
-        push_event(event) {
-            events.push(event);
-        },
         assert_events(expected_events) {
             assert.deepEqual(events, expected_events);
         },
@@ -158,7 +152,7 @@ run_test("basics", () => {
 
     const row = {
         length: 1,
-        offset: () => ({top: 25}),
+        get_offset_to_window: () => ({top: 25}),
     };
 
     message_lists.current.selected_id = () => -1;
@@ -171,17 +165,15 @@ run_test("basics", () => {
         last: () => ({id: 1100}),
     };
 
-    let cont;
-
     message_fetch.load_messages_for_narrow = (opts) => {
         // Only validates the anchor and set of fields
-        cont = opts.cont;
-
         assert.deepEqual(opts, {
             cont: opts.cont,
             msg_list: opts.msg_list,
             anchor: 1000,
         });
+
+        opts.cont();
     };
 
     narrow.activate(terms, {
@@ -194,7 +186,7 @@ run_test("basics", () => {
 
     helper.assert_events([
         [message_scroll, "hide_top_of_narrow_notices"],
-        [message_scroll, "hide_indicators"],
+        [message_feed_loading, "hide_indicators"],
         [compose_banner, "clear_message_sent_banners"],
         [notifications, "redraw_title"],
         [unread_ops, "process_visible"],
@@ -219,13 +211,4 @@ run_test("basics", () => {
     });
 
     assert.equal(narrow_state.narrowed_to_pms(), true);
-
-    channel.post = (opts) => {
-        assert.equal(opts.url, "/json/report/narrow_times");
-        helper.push_event("report narrow times");
-    };
-
-    helper.clear();
-    cont();
-    helper.assert_events(["report narrow times"]);
 });

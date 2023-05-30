@@ -32,7 +32,7 @@ Options:
       Sets the PostgreSQL database name.
   --postgresql-database-user=zulip
       Sets the PostgreSQL database user.
-  --postgresql-version=14
+  --postgresql-version=15
       Sets the version of PostgreSQL that will be installed.
   --postgresql-missing-dictionaries
       Set postgresql.missing_dictionaries, which alters the initial database.  Use with
@@ -140,7 +140,7 @@ read -r -a ADDITIONAL_PACKAGES <<<"${ADDITIONAL_PACKAGES:-}"
 # e.g. zulip::profile::app_frontend for a Zulip frontend server.
 PUPPET_CLASSES="${PUPPET_CLASSES:-zulip::profile::standalone}"
 VIRTUALENV_NEEDED="${VIRTUALENV_NEEDED:-yes}"
-POSTGRESQL_VERSION="${POSTGRESQL_VERSION:-14}"
+POSTGRESQL_VERSION="${POSTGRESQL_VERSION:-15}"
 
 if [ -n "$SELF_SIGNED_CERT" ] && [ -n "$USE_CERTBOT" ]; then
     set +x
@@ -219,7 +219,7 @@ if [ -f /etc/os-release ]; then
 fi
 
 case "$os_id $os_version_id" in
-    'debian 11' | 'ubuntu 20.04' | 'ubuntu 22.04') ;;
+    'debian 11' | 'debian 12' | 'ubuntu 20.04' | 'ubuntu 22.04') ;;
     *)
         set +x
         cat <<EOF
@@ -228,6 +228,7 @@ Unsupported OS release: $os_id $os_version_id
 
 Zulip in production is supported only on:
  - Debian 11
+ - Debian 12
  - Ubuntu 20.04 LTS
  - Ubuntu 22.04 LTS
 

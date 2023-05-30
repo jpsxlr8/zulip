@@ -19,6 +19,7 @@ import * as confirm_dialog from "./confirm_dialog";
 import {$t, $t_html} from "./i18n";
 import {localstorage} from "./localstorage";
 import * as markdown from "./markdown";
+import * as messages_overlay_ui from "./messages_overlay_ui";
 import * as narrow from "./narrow";
 import * as narrow_state from "./narrow_state";
 import * as overlays from "./overlays";
@@ -415,44 +416,6 @@ export function format_draft(draft) {
     return formatted;
 }
 
-function row_with_focus() {
-    const focused_draft = $(".draft-info-box:focus")[0];
-    return $(focused_draft).parent(".draft-row");
-}
-
-function row_before_focus() {
-    const $focused_row = row_with_focus();
-    const $prev_row = $focused_row.prev(".draft-row:visible");
-    // The draft modal can have two sub-sections. This handles the edge case
-    // when the user moves from the second "Other drafts" section to the first
-    // section which contains drafts from a particular narrow.
-    if (
-        $prev_row.length === 0 &&
-        $focused_row.parent().attr("id") === "other-drafts" &&
-        $("#drafts-from-conversation").is(":visible")
-    ) {
-        return $($("#drafts-from-conversation").children(".draft-row:visible").last());
-    }
-
-    return $prev_row;
-}
-
-function row_after_focus() {
-    const $focused_row = row_with_focus();
-    const $next_row = $focused_row.next(".draft-row:visible");
-    // The draft modal can have two sub-sections. This handles the edge case
-    // when the user moves from the first section (drafts from a particular
-    // narrow) to the second section which contains the rest of the drafts.
-    if (
-        $next_row.length === 0 &&
-        $focused_row.parent().attr("id") === "drafts-from-conversation" &&
-        $("#other-drafts").is(":visible")
-    ) {
-        return $("#other-drafts").children(".draft-row:visible").first();
-    }
-    return $next_row;
-}
-
 function remove_draft($draft_row) {
     // Deletes the draft and removes it from the list
     const draft_id = $draft_row.data("draft-id");
@@ -556,6 +519,44 @@ function filter_drafts_by_compose_box_and_recipient(drafts) {
     return _.pick(drafts, narrow_drafts_ids);
 }
 
+const keyboard_handling_context = {
+    get_items_ids() {
+        const draft_arrow = draft_model.get();
+        return Object.getOwnPropertyNames(draft_arrow);
+    },
+    on_enter() {
+        // This handles when pressing Enter while looking at drafts.
+        // It restores draft that is focused.
+        const draft_id_arrow = this.get_items_ids();
+        const focused_draft_id = messages_overlay_ui.get_focused_element_id(this);
+        if (Object.hasOwn(document.activeElement.parentElement.dataset, "draftId")) {
+            restore_draft(focused_draft_id);
+        } else {
+            const first_draft = draft_id_arrow.at(-1);
+            restore_draft(first_draft);
+        }
+    },
+    on_delete() {
+        // Allows user to delete drafts with Backspace
+        const focused_element_id = messages_overlay_ui.get_focused_element_id(this);
+        if (focused_element_id === undefined) {
+            return;
+        }
+        const $focused_row = messages_overlay_ui.row_with_focus(this);
+        messages_overlay_ui.focus_on_sibling_element(this);
+        remove_draft($focused_row);
+    },
+    items_container_selector: "drafts-container",
+    items_list_selector: "drafts-list",
+    row_item_selector: "draft-row",
+    box_item_selector: "draft-info-box",
+    id_attribute_name: "data-draft-id",
+};
+
+export function handle_keyboard_events(e, event_key) {
+    messages_overlay_ui.modals_handle_events(e, event_key, keyboard_handling_context);
+}
+
 export function launch() {
     function format_drafts(data) {
         for (const [id, draft] of Object.entries(data)) {
@@ -651,138 +652,12 @@ export function launch() {
     $("#draft_overlay").css("opacity");
 
     open_overlay();
-    set_initial_element([...formatted_narrow_drafts, ...formatted_other_drafts]);
+    const first_element_id = [...formatted_narrow_drafts, ...formatted_other_drafts][0]?.draft_id;
+    messages_overlay_ui.set_initial_element(first_element_id, keyboard_handling_context);
     setup_event_handlers();
 }
 
-function activate_element(elem) {
-    $(".draft-info-box").removeClass("active");
-    $(elem).expectOne().addClass("active");
-    elem.focus();
-}
-
-function drafts_initialize_focus(event_name) {
-    // If a draft is not focused in draft modal, then focus the last draft
-    // if up_arrow is clicked or the first draft if down_arrow is clicked.
-    if (
-        (event_name !== "up_arrow" && event_name !== "down_arrow") ||
-        $(".draft-info-box:focus")[0]
-    ) {
-        return;
-    }
-
-    const draft_arrow = draft_model.get();
-    const draft_id_arrow = Object.getOwnPropertyNames(draft_arrow);
-    if (draft_id_arrow.length === 0) {
-        // empty drafts modal
-        return;
-    }
-
-    let draft_element;
-    if (event_name === "up_arrow") {
-        draft_element = document.querySelectorAll(
-            '[data-draft-id="' + draft_id_arrow.at(-1) + '"]',
-        );
-    } else if (event_name === "down_arrow") {
-        draft_element = document.querySelectorAll('[data-draft-id="' + draft_id_arrow[0] + '"]');
-    }
-    const focus_element = draft_element[0].children[0];
-
-    activate_element(focus_element);
-}
-
-function drafts_scroll($next_focus_draft_row) {
-    if ($next_focus_draft_row[0] === undefined) {
-        return;
-    }
-    if ($next_focus_draft_row[0].children[0] === undefined) {
-        return;
-    }
-    activate_element($next_focus_draft_row[0].children[0]);
-
-    // If focused draft is first draft, scroll to the top.
-    if ($(".draft-info-box").first()[0].parentElement === $next_focus_draft_row[0]) {
-        $(".drafts-list")[0].scrollTop = 0;
-    }
-
-    // If focused draft is the last draft, scroll to the bottom.
-    if ($(".draft-info-box").last()[0].parentElement === $next_focus_draft_row[0]) {
-        $(".drafts-list")[0].scrollTop =
-            $(".drafts-list")[0].scrollHeight - $(".drafts-list").height();
-    }
-
-    // If focused draft is cut off from the top, scroll up halfway in draft modal.
-    if ($next_focus_draft_row.position().top < 55) {
-        // 55 is the minimum distance from the top that will require extra scrolling.
-        $(".drafts-list")[0].scrollTop -= $(".drafts-list")[0].clientHeight / 2;
-    }
-
-    // If focused draft is cut off from the bottom, scroll down halfway in draft modal.
-    const dist_from_top = $next_focus_draft_row.position().top;
-    const total_dist = dist_from_top + $next_focus_draft_row[0].clientHeight;
-    const dist_from_bottom = $(".drafts-container")[0].clientHeight - total_dist;
-    if (dist_from_bottom < -4) {
-        // -4 is the min dist from the bottom that will require extra scrolling.
-        $(".drafts-list")[0].scrollTop += $(".drafts-list")[0].clientHeight / 2;
-    }
-}
-
-export function drafts_handle_events(e, event_key) {
-    const draft_arrow = draft_model.get();
-    const draft_id_arrow = Object.getOwnPropertyNames(draft_arrow);
-    drafts_initialize_focus(event_key);
-
-    // This detects up arrow key presses when the draft overlay
-    // is open and scrolls through the drafts.
-    if (event_key === "up_arrow" || event_key === "vim_up") {
-        drafts_scroll(row_before_focus());
-    }
-
-    // This detects down arrow key presses when the draft overlay
-    // is open and scrolls through the drafts.
-    if (event_key === "down_arrow" || event_key === "vim_down") {
-        drafts_scroll(row_after_focus());
-    }
-
-    const focused_draft_id = row_with_focus().data("draft-id");
-    // Allows user to delete drafts with Backspace
-    if ((event_key === "backspace" || event_key === "delete") && focused_draft_id !== undefined) {
-        const $draft_row = row_with_focus();
-        const $next_draft_row = row_after_focus();
-        const $prev_draft_row = row_before_focus();
-        let draft_to_be_focused_id;
-
-        // Try to get the next draft in the list and 'focus' it
-        // Use previous draft as a fallback
-        if ($next_draft_row[0] !== undefined) {
-            draft_to_be_focused_id = $next_draft_row.data("draft-id");
-        } else if ($prev_draft_row[0] !== undefined) {
-            draft_to_be_focused_id = $prev_draft_row.data("draft-id");
-        }
-
-        const new_focus_element = document.querySelectorAll(
-            '[data-draft-id="' + draft_to_be_focused_id + '"]',
-        );
-        if (new_focus_element[0] !== undefined) {
-            activate_element(new_focus_element[0].children[0]);
-        }
-
-        remove_draft($draft_row);
-    }
-
-    // This handles when pressing Enter while looking at drafts.
-    // It restores draft that is focused.
-    if (event_key === "enter") {
-        if (Object.hasOwn(document.activeElement.parentElement.dataset, "draftId")) {
-            restore_draft(focused_draft_id);
-        } else {
-            const first_draft = draft_id_arrow.at(-1);
-            restore_draft(first_draft);
-        }
-    }
-}
-
-export function open_overlay() {
+function open_overlay() {
     overlays.open_overlay({
         name: "drafts",
         $overlay: $("#draft_overlay"),
@@ -790,17 +665,6 @@ export function open_overlay() {
             browser_history.exit_overlay();
         },
     });
-}
-
-export function set_initial_element(drafts) {
-    if (drafts.length > 0) {
-        const curr_draft_id = drafts[0].draft_id;
-        const selector = '[data-draft-id="' + curr_draft_id + '"]';
-        const curr_draft_element = document.querySelectorAll(selector);
-        const focus_element = curr_draft_element[0].children[0];
-        activate_element(focus_element);
-        $(".drafts-list")[0].scrollTop = 0;
-    }
 }
 
 export function initialize() {
@@ -817,6 +681,6 @@ export function initialize() {
     set_count(Object.keys(draft_model.get()).length);
 
     $("body").on("focus", ".draft-info-box", (e) => {
-        activate_element(e.target);
+        messages_overlay_ui.activate_element(e.target, keyboard_handling_context);
     });
 }

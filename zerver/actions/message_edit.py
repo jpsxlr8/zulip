@@ -832,25 +832,25 @@ def do_update_message(
         user_profiles_for_visibility_policy_pair: Dict[
             Tuple[int, int], List[UserProfile]
         ] = defaultdict(list)
-        for user_profile in user_profiles_having_visibility_policy:
-            if user_profile not in target_topic_user_profile_to_visibility_policy:
+        for user_profile_with_policy in user_profiles_having_visibility_policy:
+            if user_profile_with_policy not in target_topic_user_profile_to_visibility_policy:
                 target_topic_user_profile_to_visibility_policy[
-                    user_profile
+                    user_profile_with_policy
                 ] = UserTopic.VisibilityPolicy.INHERIT
-            elif user_profile not in orig_topic_user_profile_to_visibility_policy:
+            elif user_profile_with_policy not in orig_topic_user_profile_to_visibility_policy:
                 orig_topic_user_profile_to_visibility_policy[
-                    user_profile
+                    user_profile_with_policy
                 ] = UserTopic.VisibilityPolicy.INHERIT
 
             orig_topic_visibility_policy = orig_topic_user_profile_to_visibility_policy[
-                user_profile
+                user_profile_with_policy
             ]
             target_topic_visibility_policy = target_topic_user_profile_to_visibility_policy[
-                user_profile
+                user_profile_with_policy
             ]
             user_profiles_for_visibility_policy_pair[
                 (orig_topic_visibility_policy, target_topic_visibility_policy)
-            ].append(user_profile)
+            ].append(user_profile_with_policy)
 
         # If the messages are being moved to a stream the user
         # cannot access, then we treat this as the
@@ -917,11 +917,12 @@ def do_update_message(
                 )
             else:
                 # This corresponds to the case when messages are moved
-                # to a stream-topic pair that didn't exist.
-                if new_visibility_policy == UserTopic.VisibilityPolicy.INHERIT:
+                # to a stream-topic pair that didn't exist. There can
+                # still be UserTopic rows for the stream-topic pair
+                # that didn't exist if the messages in that topic had
+                # been deleted.
+                if new_visibility_policy == target_topic_visibility_policy:
                     # This avoids unnecessary db operations and INFO logs.
-                    # As INHERIT is the default visibility_policy in the new
-                    # stream-topic pair for users.
                     continue
                 bulk_do_set_user_topic_visibility_policy(
                     user_profiles,
@@ -1210,7 +1211,7 @@ def check_update_message(
             user_profile.realm.move_messages_within_stream_limit_seconds + edit_limit_buffer
         )
         if (timezone_now() - message.date_sent) > datetime.timedelta(seconds=deadline_seconds):
-            raise JsonableError(_("The time limit for editing this message's topic has passed"))
+            raise JsonableError(_("The time limit for editing this message's topic has passed."))
 
     rendering_result = None
     links_for_embed: Set[str] = set()

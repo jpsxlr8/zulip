@@ -33,6 +33,7 @@ export const CLASSNAMES = {
     recipient_not_subscribed: "recipient_not_subscribed",
     wildcard_warning: "wildcard_warning",
     private_stream_warning: "private_stream_warning",
+    unscheduled_message: "unscheduled_message",
     // errors
     wildcards_not_allowed: "wildcards_not_allowed",
     subscription_error: "subscription_error",
@@ -67,6 +68,19 @@ export function append_compose_banner_to_banner_list(
     scroll_util.get_content_element($list_container).append(banner);
 }
 
+export function update_or_append_banner(
+    banner: HTMLElement | JQuery.htmlString,
+    banner_classname: string,
+    $list_container: JQuery,
+): void {
+    const $banner = $list_container.find(`.${CSS.escape(banner_classname)}`);
+    if ($banner.length === 0) {
+        append_compose_banner_to_banner_list(banner, $list_container);
+    } else {
+        $banner.replaceWith(banner);
+    }
+}
+
 export function clear_message_sent_banners(include_unmute_banner = true): void {
     for (const classname of Object.values(MESSAGE_SENT_CLASSNAMES)) {
         $(`#compose_banners .${CSS.escape(classname)}`).remove();
@@ -97,7 +111,7 @@ export function clear_unmute_topic_notifications(): void {
 }
 
 export function clear_all(): void {
-    $(`#compose_banners`).empty();
+    scroll_util.get_content_element($(`#compose_banners`)).empty();
 }
 
 export function show_error_message(
@@ -106,7 +120,9 @@ export function show_error_message(
     $container: JQuery,
     $bad_input?: JQuery,
 ): void {
-    $(`#compose_banners .${CSS.escape(classname)}`).remove();
+    // To prevent the same banner from appearing twice,
+    // we remove the banner with a matched classname.
+    $container.find(`.${CSS.escape(classname)}`).remove();
 
     const new_row = render_compose_banner({
         banner_type: ERROR,
@@ -137,12 +153,6 @@ export function show_stream_does_not_exist_error(stream_name: string): void {
     append_compose_banner_to_banner_list(new_row, $("#compose_banners"));
     hide_compose_spinner();
 
-    // A copy of `compose_recipient.open_compose_stream_dropup()` that
-    // can't be imported due to typescript and import circles.
-    // TODO: Once we use stream IDs, not names, as the fundamental
-    // compose_state storage for streams, this error will be impossible.
-    if ($("#id_compose_select_recipient").hasClass("open")) {
-        return;
-    }
-    $("#id_compose_select_recipient button").trigger("click");
+    // Open stream select dropdown.
+    $("#compose_select_recipient_widget").trigger("click");
 }

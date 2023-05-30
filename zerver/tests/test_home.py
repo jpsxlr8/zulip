@@ -116,7 +116,6 @@ class HomeTest(ZulipTestCase):
         "realm_bot_creation_policy",
         "realm_bot_domain",
         "realm_bots",
-        "realm_community_topic_editing_limit_seconds",
         "realm_create_private_stream_policy",
         "realm_create_public_stream_policy",
         "realm_create_web_public_stream_policy",
@@ -440,7 +439,7 @@ class HomeTest(ZulipTestCase):
         # Verify number of queries for Realm admin isn't much higher than for normal users.
         self.login("iago")
         flush_per_request_caches()
-        with self.assert_database_query_count(48):
+        with self.assert_database_query_count(50):
             with patch("zerver.lib.cache.cache_set") as cache_mock:
                 result = self._get_home_page()
                 self.check_rendered_logged_in_app(result)
@@ -499,7 +498,7 @@ class HomeTest(ZulipTestCase):
         user = self.example_user("hamlet")
         self.login_user(user)
 
-        for user_tos_version in [None, "1.1", "2.0.3.4"]:
+        for user_tos_version in [None, "-1", "1.1", "2.0.3.4"]:
             user.tos_version = user_tos_version
             user.save()
 
@@ -536,7 +535,7 @@ class HomeTest(ZulipTestCase):
         user = self.example_user("hamlet")
         self.login_user(user)
 
-        user.tos_version = None
+        user.tos_version = UserProfile.TOS_VERSION_BEFORE_FIRST_LOGIN
         user.save()
 
         with self.settings(
@@ -557,6 +556,61 @@ class HomeTest(ZulipTestCase):
         result = self.client_post("/accounts/accept_terms/", {"terms": True})
         self.assertEqual(result.status_code, 302)
         self.assertEqual(result["Location"], "/")
+
+        user = self.example_user("hamlet")
+        user.tos_version = "-1"
+        user.save()
+
+        result = self.client_post("/accounts/accept_terms/")
+        self.assertEqual(result.status_code, 200)
+        self.assert_in_response("I agree to the", result)
+        self.assert_in_response(
+            "Administrators of this Zulip organization will be able to see this email address.",
+            result,
+        )
+
+        result = self.client_post(
+            "/accounts/accept_terms/",
+            {
+                "terms": True,
+                "email_address_visibility": UserProfile.EMAIL_ADDRESS_VISIBILITY_MODERATORS,
+            },
+        )
+        self.assertEqual(result.status_code, 302)
+        self.assertEqual(result["Location"], "/")
+
+        user = self.example_user("hamlet")
+        self.assertEqual(
+            user.email_address_visibility, UserProfile.EMAIL_ADDRESS_VISIBILITY_MODERATORS
+        )
+
+    def test_set_email_address_visibility_without_terms_of_service(self) -> None:
+        self.login("hamlet")
+        user = self.example_user("hamlet")
+        user.tos_version = "-1"
+        user.save()
+
+        with self.settings(TERMS_OF_SERVICE_VERSION=None):
+            result = self.client_get("/", dict(stream="Denmark"))
+            self.assertEqual(result.status_code, 200)
+            self.assert_in_response(
+                "Administrators of this Zulip organization will be able to see this email address.",
+                result,
+            )
+
+            result = self.client_post(
+                "/accounts/accept_terms/",
+                {
+                    "email_address_visibility": UserProfile.EMAIL_ADDRESS_VISIBILITY_MODERATORS,
+                },
+            )
+            self.assertEqual(result.status_code, 302)
+            self.assertEqual(result["Location"], "/")
+
+            user = self.example_user("hamlet")
+            self.assertEqual(
+                user.email_address_visibility, UserProfile.EMAIL_ADDRESS_VISIBILITY_MODERATORS
+            )
 
     def test_bad_narrow(self) -> None:
         self.login("hamlet")

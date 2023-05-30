@@ -11,13 +11,14 @@ import * as row from "./rows";
 import * as settings_data from "./settings_data";
 import * as stream_data from "./stream_data";
 import * as stream_settings_ui from "./stream_settings_ui";
+import * as sub_store from "./sub_store";
 
 extend([lchPlugin, mixPlugin]);
 
 export function update_stream_recipient_color($stream_header) {
     if ($stream_header.length) {
         const stream_id = Number.parseInt($($stream_header).attr("data-stream-id"), 10);
-        const stream_name = stream_data.maybe_get_stream_name(stream_id);
+        const stream_name = sub_store.maybe_get_stream_name(stream_id);
         if (!stream_name) {
             return;
         }
@@ -47,8 +48,8 @@ export function get_recipient_bar_color(color) {
     // Mixes 50% of color to 40% of white (light theme) / black (dark theme).
     const using_dark_theme = settings_data.using_dark_theme();
     color = get_stream_privacy_icon_color(color);
-    return colord(using_dark_theme ? "#000000" : "#ffffff")
-        .mix(color, using_dark_theme ? 0.43 : 0.35)
+    return colord(using_dark_theme ? "#000000" : "#f9f9f9")
+        .mix(color, using_dark_theme ? 0.38 : 0.22)
         .toHex();
 }
 

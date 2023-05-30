@@ -18,10 +18,10 @@ import * as people from "./people";
 import * as settings_config from "./settings_config";
 import * as settings_data from "./settings_data";
 import * as stream_data from "./stream_data";
+import * as sub_store from "./sub_store";
 import * as util from "./util";
 
 let user_acknowledged_wildcard = false;
-let wildcard_mention;
 
 export let wildcard_mention_large_stream_threshold = 15;
 
@@ -59,19 +59,49 @@ export function needs_subscribe_warning(user_id, stream_id) {
     return true;
 }
 
-export function warn_if_private_stream_is_linked(linked_stream, $textarea) {
-    // For PMs, we currently don't warn about links to private
-    // streams, since you are specifically sharing the existence of
-    // the private stream with someone.  One could imagine changing
-    // this policy if user feedback suggested it was useful.
-    if (compose_state.get_message_type() !== "stream") {
-        return;
+function get_stream_id_for_textarea($textarea) {
+    // Returns the stream ID, if any, associated with the textarea:
+    // The recipient of a message being edited, or the target
+    // recipient of a message being drafted in the compose box.
+    // Returns undefined if the appropriate context is a direct
+    // message conversation.
+    const is_in_editing_area = $textarea.closest(".message_row").length > 0;
+
+    if (is_in_editing_area) {
+        const stream_id_str = $textarea
+            .closest(".recipient_row")
+            .find(".message_header")
+            .attr("data-stream-id");
+        if (stream_id_str === undefined) {
+            // Direct messages don't have a data-stream-id.
+            return undefined;
+        }
+        return Number.parseInt(stream_id_str, 10);
     }
 
-    const compose_stream = stream_data.get_sub(compose_state.stream_name());
-    if (compose_stream === undefined) {
-        // We have an invalid stream name, don't warn about this here as
-        // we show an error to the user when they try to send the message.
+    const stream_name = compose_state.stream_name();
+
+    if (!stream_name) {
+        return undefined;
+    }
+
+    return stream_data.get_sub(stream_name).stream_id;
+}
+
+export function warn_if_private_stream_is_linked(linked_stream, $textarea) {
+    const stream_id = get_stream_id_for_textarea($textarea);
+
+    if (!stream_id) {
+        // There are two cases in which the `stream_id` will be
+        // omitted, and we want to exclude the warning banner:
+        //
+        // 1. We currently do not warn about links to private streams
+        // in direct messages; it would probably be an improvement to
+        // do so when one of the recipients is not subscribed.
+        //
+        // 2. If we have an invalid stream name, we do not warn about
+        // it here; we will show an error to the user when they try to
+        // send the message.
         return;
     }
 
@@ -93,7 +123,7 @@ export function warn_if_private_stream_is_linked(linked_stream, $textarea) {
     // knows it exists.  (But always warn Zephyr users, since
     // we may not know their stream's subscribers.)
     if (
-        peer_data.is_subscriber_subset(compose_stream.stream_id, linked_stream.stream_id) &&
+        peer_data.is_subscriber_subset(stream_id, linked_stream.stream_id) &&
         !page_params.realm_is_zephyr_mirror_realm
     ) {
         return;
@@ -109,10 +139,6 @@ export function warn_if_private_stream_is_linked(linked_stream, $textarea) {
 }
 
 export function warn_if_mentioning_unsubscribed_user(mentioned, $textarea) {
-    if (compose_state.get_message_type() !== "stream") {
-        return;
-    }
-
     // Disable for Zephyr mirroring realms, since we never have subscriber lists there
     if (page_params.realm_is_zephyr_mirror_realm) {
         return;
@@ -124,19 +150,13 @@ export function warn_if_mentioning_unsubscribed_user(mentioned, $textarea) {
         return; // don't check if @all/@everyone/@stream
     }
 
-    const stream_name = compose_state.stream_name();
+    const stream_id = get_stream_id_for_textarea($textarea);
 
-    if (!stream_name) {
+    if (!stream_id) {
         return;
     }
 
-    const sub = stream_data.get_sub(stream_name);
-
-    if (!sub) {
-        return;
-    }
-
-    if (needs_subscribe_warning(user_id, sub.stream_id)) {
+    if (needs_subscribe_warning(user_id, stream_id)) {
         const $banner_container = compose_banner.get_compose_banner_container($textarea);
         const $existing_invites_area = $banner_container.find(
             `.${CSS.escape(compose_banner.CLASSNAMES.recipient_not_subscribed)}`,
@@ -151,7 +171,7 @@ export function warn_if_mentioning_unsubscribed_user(mentioned, $textarea) {
         if (!existing_invites.includes(user_id)) {
             const context = {
                 user_id,
-                stream_id: sub.stream_id,
+                stream_id,
                 banner_type: compose_banner.WARNING,
                 button_text: can_subscribe_other_users
                     ? $t({defaultMessage: "Subscribe them"})
@@ -230,34 +250,52 @@ export function warn_if_topic_resolved(topic_changed) {
     }
 }
 
-function show_wildcard_warnings(stream_id) {
-    const subscriber_count = peer_data.get_subscriber_count(stream_id) || 0;
-
+function show_wildcard_warnings(opts) {
+    const subscriber_count = peer_data.get_subscriber_count(opts.stream_id) || 0;
+    const stream_name = sub_store.maybe_get_stream_name(opts.stream_id);
+    const is_edit_container = opts.$banner_container.closest(".edit_form_banners").length > 0;
     const classname = compose_banner.CLASSNAMES.wildcard_warning;
+
+    let button_text = opts.scheduling_message
+        ? $t({defaultMessage: "Yes, schedule"})
+        : $t({defaultMessage: "Yes, send"});
+
+    if (is_edit_container) {
+        button_text = $t({defaultMessage: "Yes, save"});
+    }
+
     const wildcard_template = render_wildcard_warning({
         banner_type: compose_banner.WARNING,
         subscriber_count,
-        stream_name: compose_state.stream_name(),
-        wildcard_mention,
-        button_text: $t({defaultMessage: "Yes, send"}),
+        stream_name,
+        wildcard_mention: opts.wildcard_mention,
+        button_text,
         hide_close_button: true,
         classname,
+        scheduling_message: opts.scheduling_message,
     });
 
     // only show one error for any number of @all or @everyone mentions
-    if ($(`#compose_banners .${CSS.escape(classname)}`).length === 0) {
+    if (opts.$banner_container.find(`.${CSS.escape(classname)}`).length === 0) {
         compose_banner.append_compose_banner_to_banner_list(
             wildcard_template,
-            $("#compose_banners"),
+            opts.$banner_container,
+        );
+    } else {
+        // if there is already a banner, replace it with the new one
+        compose_banner.update_or_append_banner(
+            wildcard_template,
+            classname,
+            opts.$banner_container,
         );
     }
 
     user_acknowledged_wildcard = false;
 }
 
-export function clear_wildcard_warnings() {
+export function clear_wildcard_warnings($banner_container) {
     const classname = compose_banner.CLASSNAMES.wildcard_warning;
-    $(`#compose_banners .${CSS.escape(classname)}`).remove();
+    $banner_container.find(`.${CSS.escape(classname)}`).remove();
 }
 
 export function set_user_acknowledged_wildcard_flag(value) {
@@ -355,12 +393,15 @@ export function set_wildcard_mention_large_stream_threshold(value) {
     wildcard_mention_large_stream_threshold = value;
 }
 
-function validate_stream_message_mentions(stream_id) {
-    const subscriber_count = peer_data.get_subscriber_count(stream_id) || 0;
+export function validate_stream_message_mentions(opts) {
+    const subscriber_count = peer_data.get_subscriber_count(opts.stream_id) || 0;
 
     // If the user is attempting to do a wildcard mention in a large
     // stream, check if they permission to do so.
-    if (wildcard_mention !== null && subscriber_count > wildcard_mention_large_stream_threshold) {
+    if (
+        opts.wildcard_mention !== null &&
+        subscriber_count > wildcard_mention_large_stream_threshold
+    ) {
         if (!wildcard_mention_allowed()) {
             compose_banner.show_error_message(
                 $t({
@@ -368,16 +409,13 @@ function validate_stream_message_mentions(stream_id) {
                         "You do not have permission to use wildcard mentions in this stream.",
                 }),
                 compose_banner.CLASSNAMES.wildcards_not_allowed,
-                // Since we don't trigger validation in edit mode, the only place where
-                // wildcard warnings will appear is the compose banners container.
-                $("#compose_banners"),
+                opts.$banner_container,
             );
             return false;
         }
 
-        if (user_acknowledged_wildcard === undefined || user_acknowledged_wildcard === false) {
-            // user has not seen a warning message yet if undefined
-            show_wildcard_warnings(stream_id);
+        if (!user_acknowledged_wildcard) {
+            show_wildcard_warnings(opts);
 
             $("#compose-send-button").prop("disabled", false);
             compose_ui.hide_compose_spinner();
@@ -385,10 +423,10 @@ function validate_stream_message_mentions(stream_id) {
         }
     } else {
         // the message no longer contains @all or @everyone
-        clear_wildcard_warnings();
+        clear_wildcard_warnings(opts.$banner_container);
     }
     // at this point, the user has either acknowledged the warning or removed @all / @everyone
-    user_acknowledged_wildcard = undefined;
+    user_acknowledged_wildcard = false;
 
     return true;
 }
@@ -445,7 +483,7 @@ export function validate_stream_message_address_info(stream_name) {
     return validation_error(error_type, stream_name);
 }
 
-function validate_stream_message() {
+function validate_stream_message(scheduling_message) {
     const stream_name = compose_state.stream_name();
     const $banner_container = $("#compose_banners");
     if (stream_name === "") {
@@ -489,14 +527,16 @@ function validate_stream_message() {
         return false;
     }
 
-    /* Note: This is a global and thus accessible in the functions
-       below; it's important that we update this state here before
-       proceeding with further validation. */
-    wildcard_mention = util.find_wildcard_mentions(compose_state.message_content());
+    const wildcard_mention = util.find_wildcard_mentions(compose_state.message_content());
 
     if (
         !validate_stream_message_address_info(stream_name) ||
-        !validate_stream_message_mentions(sub.stream_id)
+        !validate_stream_message_mentions({
+            stream_id: sub.stream_id,
+            $banner_container,
+            wildcard_mention,
+            scheduling_message,
+        })
     ) {
         return false;
     }
@@ -629,7 +669,7 @@ export function validate_message_length() {
     return true;
 }
 
-export function validate() {
+export function validate(scheduling_message) {
     const message_content = compose_state.message_content();
     if (/^\s*$/.test(message_content)) {
         $("#compose-textarea").toggleClass("invalid", true);
@@ -654,5 +694,5 @@ export function validate() {
     if (compose_state.get_message_type() === "private") {
         return validate_private_message();
     }
-    return validate_stream_message();
+    return validate_stream_message(scheduling_message);
 }

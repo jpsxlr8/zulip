@@ -677,6 +677,20 @@ h4.user_group_setting_subsection_title {
     color: hsl(0deg 0% 67%);
 }
 
+.subscriber_list_settings {
+    .add_subscribers_disabled {
+        cursor: not-allowed;
+
+        .pill-container {
+            cursor: not-allowed;
+        }
+    }
+
+    & button[disabled] {
+        pointer-events: none;
+    }
+}
+
 #groups_overlay,
 #subscription_overlay {
     #user-group-creation,
@@ -685,12 +699,15 @@ h4.user_group_setting_subsection_title {
         outline: none;
         -webkit-overflow-scrolling: touch;
 
+        .stream-creation-simplebar-container {
+            /*
+                45px (.subscriptions-header) +  44px (.display-type) + 60px (.modal-footer)
+            */
+            height: calc(95vh - 149px);
+        }
+
         .user-group-creation-body,
         .stream-creation-body {
-            /*
-                45px (.subscriptions-header) +  44px (.display-type) + 60px (.modal-footer) + 15px (padding for .simplebar-content)
-            */
-            height: calc(95vh - 164px);
             padding: 15px 15px 0;
         }
 
@@ -699,6 +716,12 @@ h4.user_group_setting_subsection_title {
             bottom: 0;
             width: calc(100% - 27px);
             padding-top: 9px;
+        }
+
+        @media (width > $md_min) {
+            .modal-footer {
+                border-radius: 0 0 6px;
+            }
         }
 
         .add_all_users_to_user_group,
@@ -1099,7 +1122,7 @@ div.settings-radio-input-parent {
         left: 101%;
 
         top: 45px;
-        background-color: hsl(0deg 0% 98%);
+        background-color: var(--color-background-modal);
         border-top: none;
 
         transition: all 0.3s ease;

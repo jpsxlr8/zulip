@@ -3,25 +3,36 @@
 import $ from "jquery";
 import _ from "lodash";
 
+import render_inline_decorated_stream_name from "../templates/inline_decorated_stream_name.hbs";
+
 import * as compose_banner from "./compose_banner";
 import * as compose_fade from "./compose_fade";
 import * as compose_pm_pill from "./compose_pm_pill";
 import * as compose_state from "./compose_state";
 import * as compose_ui from "./compose_ui";
 import * as compose_validate from "./compose_validate";
-import {DropdownListWidget} from "./dropdown_list_widget";
+import * as dropdown_widget from "./dropdown_widget";
 import {$t} from "./i18n";
 import * as narrow_state from "./narrow_state";
 import {page_params} from "./page_params";
 import * as settings_config from "./settings_config";
 import * as stream_bar from "./stream_bar";
 import * as stream_data from "./stream_data";
+import * as sub_store from "./sub_store";
 import * as ui_util from "./ui_util";
 import * as util from "./util";
 
-export let compose_recipient_widget;
+// selected_recipient_id is the current state for the stream picker widget:
+// "" -> stream message but no stream is selected
+// integer -> stream id of the selected stream.
+// "direct" -> Direct message is selected.
+export let selected_recipient_id = "";
+export const DIRECT_MESSAGE_ID = "direct";
 
-const DIRECT_MESSAGE = "direct";
+export function set_selected_recipient_id(recipient_id) {
+    selected_recipient_id = recipient_id;
+    on_compose_select_recipient_update();
+}
 
 function composing_to_current_topic_narrow() {
     return (
@@ -98,35 +109,42 @@ export function update_on_recipient_change() {
     update_narrow_to_recipient_visibility();
 }
 
-export function open_compose_stream_dropup() {
-    if ($("#id_compose_select_recipient").hasClass("open")) {
-        return;
+export function get_posting_policy_error_message() {
+    if (selected_recipient_id === "direct") {
+        if (
+            page_params.realm_private_message_policy ===
+            settings_config.private_message_policy_values.disabled.code
+        ) {
+            return $t({
+                defaultMessage: "Direct messages are disabled in this organization.",
+            });
+        }
+        return "";
     }
-    // We trigger a click rather than directly toggling the element;
-    // this is important to ensure the filter text gets cleared when
-    // reopening the widget after previous use.
-    $("#id_compose_select_recipient > .dropdown-toggle").trigger("click");
+
+    const stream = sub_store.get(selected_recipient_id);
+    if (stream && !stream_data.can_post_messages_in_stream(stream)) {
+        return $t({
+            defaultMessage: "You do not have permission to post in this stream.",
+        });
+    }
+    return "";
 }
 
-export function check_stream_posting_policy_for_compose_box(stream_name) {
-    const stream = stream_data.get_sub_by_name(stream_name);
-    if (!stream) {
-        return;
-    }
-    const can_post_messages_in_stream = stream_data.can_post_messages_in_stream(stream);
-    if (!can_post_messages_in_stream) {
-        $(".compose_right_float_container").addClass("disabled-compose-send-button-container");
-        compose_banner.show_error_message(
-            $t({
-                defaultMessage: "You do not have permission to post in this stream.",
-            }),
-            compose_banner.CLASSNAMES.no_post_permissions,
-            $("#compose_banners"),
-        );
-    } else {
+export function check_posting_policy_for_compose_box() {
+    const banner_text = get_posting_policy_error_message();
+    if (banner_text === "") {
         $(".compose_right_float_container").removeClass("disabled-compose-send-button-container");
         compose_banner.clear_errors();
+        return;
     }
+
+    let banner_classname = compose_banner.CLASSNAMES.no_post_permissions;
+    if (selected_recipient_id === "direct") {
+        banner_classname = compose_banner.CLASSNAMES.private_messages_disabled;
+    }
+    $(".compose_right_float_container").addClass("disabled-compose-send-button-container");
+    compose_banner.show_error_message(banner_text, banner_classname, $("#compose_banners"));
 }
 
 function switch_message_type(message_type) {
@@ -145,13 +163,25 @@ function switch_message_type(message_type) {
     compose_ui.set_focus(message_type, opts);
 }
 
-export function update_compose_for_message_type(message_type) {
+function update_recipient_label(stream_name) {
+    const stream = stream_data.get_sub_by_name(stream_name);
+    if (stream === undefined) {
+        $("#compose_select_recipient_name").text($t({defaultMessage: "Select a stream"}));
+    } else {
+        $("#compose_select_recipient_name").html(
+            render_inline_decorated_stream_name({stream, show_colored_icon: true}),
+        );
+    }
+}
+
+export function update_compose_for_message_type(message_type, opts) {
     if (message_type === "stream") {
         $("#compose-direct-recipient").hide();
         $("#stream_message_recipient_topic").show();
         $("#stream_toggle").addClass("active");
         $("#private_message_toggle").removeClass("active");
         $("#compose-recipient").removeClass("compose-recipient-direct-selected");
+        update_recipient_label(opts.stream);
     } else {
         $("#compose-direct-recipient").show();
         $("#stream_message_recipient_topic").hide();
@@ -171,43 +201,47 @@ export function update_compose_for_message_type(message_type) {
     compose_banner.clear_warnings();
 }
 
-export function on_compose_select_recipient_update(new_value) {
-    const message_type = compose_state.get_message_type();
-    if (new_value === DIRECT_MESSAGE) {
-        // TODO: In theory, we could do something more lightweight in
-        // the case it's already that value, but doing nothing would
-        // display the wrong and fail to update focus properly.
-        switch_message_type("private");
+export function on_compose_select_recipient_update() {
+    const prev_message_type = compose_state.get_message_type();
 
-        if (compose_state.private_message_recipient().length === 0) {
-            $("#private_message_recipient").trigger("focus").trigger("select");
-        }
-    } else {
+    let curr_message_type = "stream";
+    if (selected_recipient_id === DIRECT_MESSAGE_ID) {
+        curr_message_type = "private";
+    }
+
+    if (prev_message_type !== curr_message_type) {
+        switch_message_type(curr_message_type);
+    }
+
+    if (curr_message_type === "stream") {
+        // Update stream name in the recipient box.
         const $stream_header_colorblock = $(
             "#compose_recipient_selection_dropdown .stream_header_colorblock",
         );
-        stream_bar.decorate(new_value, $stream_header_colorblock);
-        if (message_type === "private") {
-            switch_message_type("stream");
-        }
-        // Always move focus to the topic input even if it's not empty,
-        // since it's likely the user will want to update the topic
-        // after updating the stream.
-        ui_util.place_caret_at_end($("#stream_message_recipient_topic")[0]);
-        check_stream_posting_policy_for_compose_box(new_value);
+        const stream_name = compose_state.stream_name();
+        update_recipient_label(stream_name);
+        stream_bar.decorate(stream_name, $stream_header_colorblock);
     }
+
+    check_posting_policy_for_compose_box();
     update_on_recipient_change();
 }
 
-export function update_stream_dropdown_options() {
-    compose_recipient_widget.replace_data(get_options_for_recipient_widget());
+export function possibly_update_stream_name_in_compose(stream_id) {
+    if (selected_recipient_id === stream_id) {
+        on_compose_select_recipient_update();
+    }
 }
 
-export function possibly_update_dropdown_selection(old_stream_name, new_stream_name) {
-    const selected_stream = compose_state.stream_name();
-    if (selected_stream === old_stream_name) {
-        compose_state.set_stream_name(new_stream_name);
+function item_click_callback(event, dropdown) {
+    let recipient_id = $(event.currentTarget).attr("data-unique-id");
+    if (recipient_id !== DIRECT_MESSAGE_ID) {
+        recipient_id = Number.parseInt(recipient_id, 10);
     }
+    set_selected_recipient_id(recipient_id);
+    dropdown.hide();
+    event.preventDefault();
+    event.stopPropagation();
 }
 
 function get_options_for_recipient_widget() {
@@ -215,7 +249,7 @@ function get_options_for_recipient_widget() {
         .subscribed_subs()
         .map((stream) => ({
             name: stream.name,
-            value: stream.name,
+            unique_id: stream.stream_id,
             stream,
         }))
         .sort((a, b) => {
@@ -229,10 +263,11 @@ function get_options_for_recipient_widget() {
         });
 
     const direct_messages_option = {
-        name: $t({defaultMessage: "Direct message"}),
-        value: DIRECT_MESSAGE,
         is_direct_message: true,
+        unique_id: DIRECT_MESSAGE_ID,
+        name: $t({defaultMessage: "Direct message"}),
     };
+
     if (
         page_params.realm_private_message_policy ===
         settings_config.private_message_policy_values.by_anyone.code
@@ -244,23 +279,79 @@ function get_options_for_recipient_widget() {
     return options;
 }
 
-export function initialize() {
-    const opts = {
-        widget_name: "compose_select_recipient",
-        data: get_options_for_recipient_widget(),
-        default_text: $t({defaultMessage: "Select a stream"}),
-        value: null,
-        on_update: on_compose_select_recipient_update,
-    };
-    compose_recipient_widget = new DropdownListWidget(opts);
-    compose_recipient_widget.setup();
+function compose_recipient_dropdown_on_show(dropdown) {
+    // Offset to display dropdown above compose.
+    let top_offset = 5;
+    const window_height = window.innerHeight;
+    const search_box_and_padding_height = 50;
+    // pixels above compose box.
+    const recipient_input_top = $("#compose_recipient_selection_dropdown").get_offset_to_window()
+        .top;
+    const top_space = recipient_input_top - top_offset - search_box_and_padding_height;
+    // pixels below compose starting from top of compose box.
+    const bottom_space = window_height - recipient_input_top - search_box_and_padding_height;
+    // Show dropdown on top / bottom based on available space.
+    let placement = "top-start";
+    if (bottom_space > top_space) {
+        placement = "bottom-start";
+        top_offset = -30;
+    }
+    const offset = [-10, top_offset];
+    dropdown.setProps({placement, offset});
+    const height = Math.min(
+        dropdown_widget.DEFAULT_DROPDOWN_HEIGHT,
+        Math.max(top_space, bottom_space),
+    );
+    const $popper = $(dropdown.popper);
+    $popper.find(".dropdown-list-wrapper").css("max-height", height + "px");
+}
 
-    $("#compose_select_recipient_widget").on("select", (e) => {
-        // We often focus on input fields to bring the user to fill it out.
-        // In this situation, a focus on the dropdown div opens the dropdown
-        // menu so that the user can select an option.
-        open_compose_stream_dropup();
-        e.stopPropagation();
+export function open_compose_recipient_dropdown() {
+    $("#compose_select_recipient_widget").trigger("click");
+}
+
+function focus_compose_recipient() {
+    $("#compose_recipient_selection_dropdown").trigger("focus");
+}
+
+// NOTE: Since tippy triggers this on `mousedown` it is always triggered before say a `click` on `textarea`.
+function on_hidden_callback() {
+    if (compose_state.get_message_type() === "stream") {
+        // Always move focus to the topic input even if it's not empty,
+        // since it's likely the user will want to update the topic
+        // after updating the stream.
+        ui_util.place_caret_at_end($("#stream_message_recipient_topic")[0]);
+    } else {
+        if (compose_state.private_message_recipient().length === 0) {
+            $("#private_message_recipient").trigger("focus").trigger("select");
+        } else {
+            $("#compose-textarea").trigger("focus");
+        }
+    }
+}
+
+export function initialize() {
+    dropdown_widget.setup(
+        {
+            target: "#compose_select_recipient_widget",
+        },
+        get_options_for_recipient_widget,
+        item_click_callback,
+        {
+            on_show_callback: compose_recipient_dropdown_on_show,
+            on_exit_with_escape_callback: focus_compose_recipient,
+            // We want to focus on topic box if dropdown was closed via selecting an item.
+            focus_target_on_hidden: false,
+            on_hidden_callback,
+        },
+    );
+
+    $("#compose_recipient_selection_dropdown").on("keydown", (e) => {
+        if (e.key === "Enter") {
+            open_compose_recipient_dropdown();
+            e.stopPropagation();
+            e.preventDefault();
+        }
     });
 
     // `keyup` isn't relevant for streams since it registers as a change only
